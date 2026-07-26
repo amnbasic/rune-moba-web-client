@@ -153,6 +153,13 @@ export default class AbilityBarOverlay {
     // Rendering (gameDrawMain overlay pass: viewport left/top/width/height).
     // =====================================================================
     static render(left: number, top: number, width: number, height: number): void {
+        // No champion picked (%champ_class 1292 unset) = no ability bar at all —
+        // the reserved mana varps can hold garbage until ::champ stamps the kit.
+        if (VarCache.var[1292] === 0) {
+            AbilityBarOverlay.barX = -1000;
+            AbilityBarOverlay.barY = -1000;
+            return;
+        }
         AbilityBarOverlay.barW = AbilityBarOverlay.SLOT_COUNT * AbilityBarOverlay.SLOT + (AbilityBarOverlay.SLOT_COUNT - 1) * AbilityBarOverlay.GAP;
         AbilityBarOverlay.barH = AbilityBarOverlay.BARS_BLOCK + AbilityBarOverlay.SLOT;
         AbilityBarOverlay.barX = left + (((width - AbilityBarOverlay.barW) / 2) | 0);
