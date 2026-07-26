@@ -130,6 +130,11 @@ export default abstract class GameShell {
                     await this.mainloopwrapper();
                 }
 
+                // Fractional position between game ticks (0..1) at draw time — lets
+                // renderers interpolate BETWEEN 20ms ticks so 60-80Hz displays don't
+                // beat against the 50Hz logic (the MOBA glide judder).
+                GameShell.tickFraction = Math.min(1, Math.max(0, 1 - (GameShell.timer.ntime - performance.now() * 1000000) / (GameShell.deltime * 1000000)));
+
                 await this.mainredrawwrapper();
             }
         } catch (e) {
@@ -156,6 +161,9 @@ export default abstract class GameShell {
     /** Smoothed per-stage frame timings (ms) for the ::perf overlay. */
     static perfLogicMs: number = 0;
     static perfDrawMs: number = 0;
+
+    /** Fraction (0..1) of the current 20ms tick elapsed at draw time (sub-tick render lerp). */
+    static tickFraction: number = 0;
 
     // com.jagex.game.runetek6.client.GameShell3.mainredrawwrapper
     protected async mainredrawwrapper(): Promise<void> {

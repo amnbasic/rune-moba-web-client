@@ -3667,6 +3667,10 @@ export class Client extends GameShell {
             }
         }
         Client.perfSceneMs = Client.perfSceneMs * 0.9 + (performance.now() - perfSceneT0) * 0.1;
+        if (Client.loopCycle % 250 === 0) {
+            // every ~5s -> dbg.log, so perf is diagnosable from the log alone
+            console.log('[perf] fps=' + GameShell.fps + ' tick=' + GameShell.perfLogicMs.toFixed(1) + 'ms draw=' + GameShell.perfDrawMs.toFixed(1) + 'ms scene=' + Client.perfSceneMs.toFixed(1) + 'ms blit=' + Client.perfPresentMs.toFixed(1) + 'ms 3d=1/' + ScreenMode.activeScale() + ' vsync=' + Timer.rafAlign + ' vp=' + width + 'x' + height);
+        }
         // FPS readout, below the top-left hover-option text so they never overlap;
         // ::perf adds the per-stage breakdown. Toggle rows live in ::settings.
         if (Client.p12 !== null && Client.showFpsCounter) {

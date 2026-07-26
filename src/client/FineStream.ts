@@ -1,5 +1,6 @@
 import { Client } from '#/client/Client.js';
 import ClientMouseListener from '#/client/ClientMouseListener.js';
+import GameShell from '#/client/GameShell.js';
 import { ClientProt } from '#/client/ClientProt.js';
 import type ClientEntity from '#/dash3d/ClientEntity.js';
 import ClientProj from '#/dash3d/ClientProj.js';
@@ -137,7 +138,11 @@ export default class FineStream {
      * seq frame ticker (entityAnim) still run after it as normal.
      */
     static interpolate(entity: ClientEntity): void {
-        const elapsed = Client.loopCycle - entity.fineStreamStartCycle;
+        // Sub-tick lerp: whole ticks + the fractional time into the current tick at
+        // DRAW time, so 60-80Hz displays get smooth motion instead of beating
+        // against the 50Hz logic clock (positions still land exactly on the Java
+        // client's per-tick values at each tick boundary).
+        const elapsed = Client.loopCycle - entity.fineStreamStartCycle + GameShell.tickFraction;
         if (elapsed > FineStream.LEASE_CYCLES) {
             FineStream.applyEndOfStream(entity);
             return;
