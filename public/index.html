@@ -70,24 +70,10 @@
             </div>
         </center>
 
-        <!-- DEV debug overlay: mirrors console + uncaught errors + promise rejections onto the page,
-             since the browser devtools console isn't reachable from the dev harness. Remove later. -->
-        <div id="dbg" style="position:fixed;top:0;left:0;max-width:52ch;max-height:100vh;overflow:auto;z-index:99999;background:rgba(0,0,0,.78);color:#5f5;font:10px/1.25 monospace;padding:4px;white-space:pre-wrap;pointer-events:auto;user-select:text;-webkit-user-select:text"></div>
+        <!-- DEV console streamer: mirrors console + uncaught errors + promise rejections to the
+             dev server (-> web-client/dbg.log). NO on-page overlay — invisible. -->
         <script>
             (function () {
-                var el = document.getElementById('dbg');
-                var lines = []; // {text, n}
-                var post = []; // raw lines queued for POST to the dev server (-> web-client/dbg.log)
-                function flushPost() {
-                    if (post.length === 0) return;
-                    var body = post.join('\n') + '\n';
-                    post = [];
-                    try { fetch('/dbg', { method: 'POST', body: body, keepalive: true }).catch(function () {}); } catch (e) {}
-                }
-                setInterval(flushPost, 120);
-                window.addEventListener('beforeunload', function () {
-                    try { if (post.length) navigator.sendBeacon('/dbg', post.join('\n') + '\n'); } catch (e) {}
-                });
                 function fmt(a) {
                     try {
                         if (a && a.stack) return String(a.stack);
@@ -95,28 +81,18 @@
                         return String(a);
                     } catch (e) { return '<?>'; }
                 }
-                function render() {
-                    el.textContent = lines.map(function (l) { return l.n > 1 ? l.text + '  x' + l.n : l.text; }).join('\n');
-                }
                 function push(tag, args) {
                     var text = tag + ' ' + Array.prototype.map.call(args, fmt).join(' ');
-                    // Send IMMEDIATELY per line via sendBeacon: it survives a hard-blocked event loop
-                    // (sync infinite loop), unlike the batched fetch which never flushes if blocked.
+                    // sendBeacon per line: survives a hard-blocked event loop (sync infinite loop).
                     try { navigator.sendBeacon('/dbg', text + '\n'); } catch (e) {}
-                    var last = lines[lines.length - 1];
-                    if (last && last.text === text) { last.n++; render(); return; } // dedupe consecutive
-                    lines.push({ text: text, n: 1 });
-                    if (lines.length > 120) lines.shift();
-                    render();
                 }
                 ['log', 'warn', 'error'].forEach(function (k) {
                     var o = console[k].bind(console);
                     console[k] = function () { push(k.toUpperCase(), arguments); o.apply(console, arguments); };
                 });
                 window.addEventListener('error', function (e) { push('UNCAUGHT', [e.message + ' @ ' + e.filename + ':' + e.lineno]); });
-                window.addEventListener('unhandledrejection', function (e) { push('REJECT', [(e.reason && e.reason.stack) || e.reason]); flushPost(); });
+                window.addEventListener('unhandledrejection', function (e) { push('REJECT', [(e.reason && e.reason.stack) || e.reason]); });
                 push('DBG', ['==== SESSION ' + new Date().toISOString() + ' ====']);
-                flushPost();
             })();
         </script>
         <script type="module">
