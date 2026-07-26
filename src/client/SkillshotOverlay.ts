@@ -218,14 +218,17 @@ export default class SkillshotOverlay {
                 }
             }
         }
-        const W = SkillshotOverlay.CAST_BAR_W;
-        const H = SkillshotOverlay.CAST_BAR_H;
+        let W = SkillshotOverlay.CAST_BAR_W;
+        let H = SkillshotOverlay.CAST_BAR_H;
         let bx: number;
         let by: number;
         if (AbilityBarOverlay.barY > -1000) {
-            // Fixed HUD anchor: centred just above the ability bar — the overhead
-            // position collided with the HP/mana bars at some camera angles.
-            bx = AbilityBarOverlay.barX + ((AbilityBarOverlay.barW - W) >> 1);
+            // Fixed HUD anchor: full ability-bar width, same height as the HP bar,
+            // just above the block — the overhead position collided with the
+            // HP/mana bars at some camera angles.
+            W = AbilityBarOverlay.barW;
+            H = 13;
+            bx = AbilityBarOverlay.barX;
             by = AbilityBarOverlay.barY - H - 6;
         } else {
             // no bar on screen (kit not latched) — overhead fallback
@@ -258,6 +261,13 @@ export default class SkillshotOverlay {
         }
         if (fillW < W) {
             Pix2D.fillRect(bx + fillW, by, W - fillW, H, SkillshotOverlay.CAST_MISS);
+        }
+        // Phase label, centred (rightString draws right-anchored: centre + half width).
+        if (Client.p12 !== null && H >= 12) {
+            const label = inChannel ? 'Channeling...' : 'Casting...';
+            const lw = Client.p12.stringWid(label);
+            const baseline = by + Client.p12.maxAscent + (((H - Client.p12.maxAscent - Client.p12.maxDescent) / 2) | 0);
+            Client.p12.rightString(label, bx + (W >> 1) + (lw >> 1), baseline, 0xffffff, 0x000000);
         }
     }
 
