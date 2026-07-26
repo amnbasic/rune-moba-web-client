@@ -200,13 +200,20 @@ export default class ScreenMode {
      * no restore bookkeeping (FIXED stamps the cache-baseline values).
      */
     static applyLayout(): void {
+        // Interfaces only exist in-game (pane 548 / welcome 549); the title screens
+        // draw without an interface tree — touching IfType there crashed gameDraw.
+        if (Client.toplevelinterface !== 548 && Client.toplevelinterface !== 549) {
+            return;
+        }
         // MOBA: crop the INVENTORY (cache interface 149 child 0) to LoL's SIX item
         // slots, 3x2, on the shared HUD pitch — cropping the REAL container keeps
         // clicks/drags/options/inv_transmit for free. Shrinking the arrays is safe:
         // inbound inv writes bounds-check, so items past slot 6 are dropped
         // client-side. Idempotent (guarded on the array length).
-        const inv = IfType.get(149, 0);
-        if (inv !== null && inv.linkObjNumber !== null && inv.linkObjNumber.length !== ScreenMode.INV_COLS * ScreenMode.INV_ROWS) {
+        // NOTE IfType.get(packed id) — the two-arg overload is (subId, id), NOT
+        // (group, file), and a missing file yields UNDEFINED (not null): use ! guards.
+        const inv = IfType.get((149 << 16) + 0);
+        if (inv && inv.linkObjNumber !== null && inv.linkObjNumber.length !== ScreenMode.INV_COLS * ScreenMode.INV_ROWS) {
             inv.width = ScreenMode.INV_COLS;
             inv.height = ScreenMode.INV_ROWS;
             inv.linkObjType = new Int32Array(ScreenMode.INV_COLS * ScreenMode.INV_ROWS);
@@ -357,8 +364,8 @@ export default class ScreenMode {
 
     /** Set a pane child's position (render coords — the layout walk re-derives the rest). */
     private static pos(child: number, x: number, y: number): void {
-        const c = IfType.get(ScreenMode.PANE_ID, child);
-        if (c === null) {
+        const c = IfType.get((ScreenMode.PANE_ID << 16) + child);
+        if (!c) {
             return;
         }
         c.x = x;
@@ -366,8 +373,8 @@ export default class ScreenMode {
     }
 
     private static size(child: number, w: number, h: number): void {
-        const c = IfType.get(ScreenMode.PANE_ID, child);
-        if (c === null) {
+        const c = IfType.get((ScreenMode.PANE_ID << 16) + child);
+        if (!c) {
             return;
         }
         if (c.width !== w || c.height !== h) {
@@ -385,8 +392,8 @@ export default class ScreenMode {
 
     /** Re-hang a pane child under another layer's packed id (-1 = pane root). */
     private static reparent(child: number, parentId: number): void {
-        const c = IfType.get(ScreenMode.PANE_ID, child);
-        if (c !== null) {
+        const c = IfType.get((ScreenMode.PANE_ID << 16) + child);
+        if (c) {
             c.layerId = parentId;
         }
     }
