@@ -1284,10 +1284,7 @@ export default class Pix3D {
         arg18: number
     ): void {
         if (GlRenderer.active) {
-            // Stage A GPU path: textured model faces render via the engine's own
-            // average-colour fallback (the lowmem look); real GPU textures follow.
-            const glAvg = Pix3D.textureManager!.getAverageRgb(arg18);
-            Pix3D.gouraudTriangle(arg0, arg1, arg2, arg3, arg4, arg5, Pix3D.textureLightColour(glAvg, arg6), Pix3D.textureLightColour(glAvg, arg7), Pix3D.textureLightColour(glAvg, arg8));
+            Pix3D.glTexturedFace(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18);
             return;
         }
         const var19 = Pix3D.textureManager!.getTexels(Pix3D.brightness, arg18);
@@ -2259,9 +2256,9 @@ export default class Pix3D {
         arg18: number
     ): void {
         if (GlRenderer.active) {
-            // Stage A GPU path: textured ground via the average-colour fallback.
-            const glAvg = Pix3D.textureManager!.getAverageRgb(arg18);
-            Pix3D.gouraudTriangle(arg0, arg1, arg2, arg3, arg4, arg5, Pix3D.textureLightColour(glAvg, arg6), Pix3D.textureLightColour(glAvg, arg7), Pix3D.textureLightColour(glAvg, arg8));
+            // GPU ground textures use the PERSPECTIVE plane math (the affine span
+            // walk was only ever a CPU shortcut) — strictly better than software.
+            Pix3D.glTexturedFace(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18);
             return;
         }
         const var19 = Pix3D.textureManager!.getTexels(Pix3D.brightness, arg18);
@@ -3152,6 +3149,51 @@ export default class Pix3D {
     }
 
     // jag::oldscape::dash3d::Pix3D::TextureLightColour
+    /**
+     * GPU textured face (Stage B): evaluate the software mapper's SCREEN-LINEAR
+     * plane functions f1/f2/f3 (u = f1/f3, v = f2/f3, texel units) at the three
+     * screen vertices and hand them to the GL varyings — linear interpolation of
+     * linear functions makes the fragment shader's divides perspective-exact.
+     * Base terms bake focal 512 (<<14 = coeff*512*32); x-steps (<<8) are per-8px
+     * spans (hence /8 per pixel), y-steps (<<5) per row; steps rescale by
+     * 512/focal exactly like the software path. Falls back to the average-colour
+     * gouraud while the texture is still downloading or the atlas is full.
+     */
+    private static glTexturedFace(
+        y0: number, y1: number, y2: number, x0: number, x1: number, x2: number,
+        l0: number, l1: number, l2: number,
+        arg9: number, arg10: number, arg11: number, arg12: number, arg13: number,
+        arg14: number, arg15: number, arg16: number, arg17: number, textureId: number
+    ): void {
+        const var33 = arg9 - arg10;
+        const var34 = arg12 - arg13;
+        const var35 = arg15 - arg16;
+        const var36 = arg11 - arg9;
+        const var37 = arg14 - arg12;
+        const var38 = arg17 - arg15;
+        const fscale = Pix3D.focal !== 512 ? 512 / Pix3D.focal : 1;
+        const f1c = (var36 * arg12 - var37 * arg9) * 16384;
+        const f1x = ((var37 * arg15 - var38 * arg12) * 256 * fscale) / 8;
+        const f1y = (var38 * arg9 - var36 * arg15) * 32 * fscale;
+        const f2c = (var33 * arg12 - var34 * arg9) * 16384;
+        const f2x = ((var34 * arg15 - var35 * arg12) * 256 * fscale) / 8;
+        const f2y = (var35 * arg9 - var33 * arg15) * 32 * fscale;
+        const f3c = (var34 * var36 - var33 * var37) * 16384;
+        const f3x = ((var35 * var37 - var34 * var38) * 256 * fscale) / 8;
+        const f3y = (var33 * var38 - var35 * var36) * 32 * fscale;
+        const ok = GlRenderer.pushTexturedTriangle(
+            textureId,
+            x0, y0, l0, f1c + f1x * x0 + f1y * y0, f2c + f2x * x0 + f2y * y0, f3c + f3x * x0 + f3y * y0,
+            x1, y1, l1, f1c + f1x * x1 + f1y * y1, f2c + f2x * x1 + f2y * y1, f3c + f3x * x1 + f3y * y1,
+            x2, y2, l2, f1c + f1x * x2 + f1y * y2, f2c + f2x * x2 + f2y * y2, f3c + f3x * x2 + f3y * y2,
+            (256 - Pix3D.trans) / 256
+        );
+        if (!ok) {
+            const avg = Pix3D.textureManager!.getAverageRgb(textureId);
+            Pix3D.gouraudTriangle(y0, y1, y2, x0, x1, x2, Pix3D.textureLightColour(avg, l0), Pix3D.textureLightColour(avg, l1), Pix3D.textureLightColour(avg, l2));
+        }
+    }
+
     static textureLightColour(arg0: number, arg1: number): number {
         let var2 = (arg1 * (arg0 & 0x7f)) >> 7;
         if (var2 < 2) {
