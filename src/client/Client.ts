@@ -532,6 +532,7 @@ export class Client extends GameShell {
     static scenePickMaxY: number = 334;
     // ::perf overlay: smoothed per-stage frame timings (ms).
     static showPerf: boolean = false;
+    static showFpsCounter: boolean = true;
     static perfSceneMs: number = 0;
     static perfPresentMs: number = 0;
     static menuX: number = 0;
@@ -2816,9 +2817,9 @@ export class Client extends GameShell {
             Client.addChat('vsync frame pacing ' + (Timer.rafAlign ? 'on (rAF)' : 'off (setTimeout)'), 0, '');
             return;
         }
-        if (arg0.toLowerCase() === '::fs') {
-            // MOBA phase 2: ::fs opens the screen-size picker (ScreenSizeDialog); a
-            // preset click applies it via ScreenMode.applyPreset — that click is the
+        if (arg0.toLowerCase() === '::settings' || arg0.toLowerCase() === '::fs') {
+            // Settings panel (screen size + perf toggles). ::fs kept as an alias; a
+            // preset click applies via ScreenMode.applyPreset — that click is the
             // user gesture the browser Fullscreen API requires. Fully client-side.
             ScreenSizeDialog.open = !ScreenSizeDialog.open;
             return;
@@ -3666,12 +3667,13 @@ export class Client extends GameShell {
             }
         }
         Client.perfSceneMs = Client.perfSceneMs * 0.9 + (performance.now() - perfSceneT0) * 0.1;
-        // FPS readout, top-left corner (always on); ::perf adds the per-stage breakdown.
-        if (Client.p12 !== null) {
-            Client.p12.drawString('Fps: ' + GameShell.fps, x + 5, y + 14, 0xffff00, 0);
+        // FPS readout, below the top-left hover-option text so they never overlap;
+        // ::perf adds the per-stage breakdown. Toggle rows live in ::settings.
+        if (Client.p12 !== null && Client.showFpsCounter) {
+            Client.p12.drawString('Fps: ' + GameShell.fps, x + 5, y + 45, 0xffff00, 0);
             if (Client.showPerf) {
-                Client.p12.drawString('tick ' + GameShell.perfLogicMs.toFixed(1) + '  draw ' + GameShell.perfDrawMs.toFixed(1) + 'ms', x + 5, y + 27, 0xffff00, 0);
-                Client.p12.drawString('scene ' + Client.perfSceneMs.toFixed(1) + '  blit ' + Client.perfPresentMs.toFixed(1) + 'ms  3d 1/' + ScreenMode.activeScale() + (Timer.rafAlign ? '  vsync' : ''), x + 5, y + 40, 0xffff00, 0);
+                Client.p12.drawString('tick ' + GameShell.perfLogicMs.toFixed(1) + '  draw ' + GameShell.perfDrawMs.toFixed(1) + 'ms', x + 5, y + 58, 0xffff00, 0);
+                Client.p12.drawString('scene ' + Client.perfSceneMs.toFixed(1) + '  blit ' + Client.perfPresentMs.toFixed(1) + 'ms  3d 1/' + ScreenMode.activeScale() + (Timer.rafAlign ? '  vsync' : ''), x + 5, y + 71, 0xffff00, 0);
             }
         }
         Client.entityOverlays(x, y, height, width);

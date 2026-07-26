@@ -2,6 +2,7 @@ import { Client } from '#/client/Client.js';
 import ClientMouseListener from '#/client/ClientMouseListener.js';
 import ScreenMode from '#/client/ScreenMode.js';
 import Pix2D from '#/graphics/Pix2D.js';
+import Timer from '#/util/Timer.js';
 
 /**
  * ScreenSizeDialog — a clickable in-viewport picker for the display size (::fs).
@@ -19,12 +20,16 @@ export default class ScreenSizeDialog {
     /** Toggled by ::fs. While true the panel draws and captures all clicks. */
     static open: boolean = false;
 
-    private static readonly TITLE: string = 'Screen Size';
-    private static readonly LABELS: string[] = ['Fixed  765 x 503', '1024 x 768', '1280 x 720', '1600 x 900', 'Fullscreen (native)', '3D detail: toggle', 'Cancel'];
-    /** Per-row target mode; -1 = cancel (just close); -2 = 3D half/full-res toggle. */
-    private static readonly MODES: number[] = [ScreenMode.FIXED, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.FULLSCREEN, -2, -1];
-    private static readonly WS: number[] = [0, 1024, 1280, 1600, 0, 0, 0];
-    private static readonly HS: number[] = [0, 768, 720, 900, 0, 0, 0];
+    private static readonly TITLE: string = 'Settings';
+    private static readonly LABELS: string[] = ['Fixed  765 x 503', '1024 x 768', '1280 x 720', '1600 x 900', 'Fullscreen (native)', '3D detail: toggle', 'VSync: toggle', 'FPS counter: toggle', 'Perf overlay: toggle', 'Cancel'];
+    /**
+     * Per-row action: >=0 = screen-mode preset; -1 = cancel (close); toggles (stay
+     * open so the re-rendered label shows the new state): -2 = 3D half/full res,
+     * -3 = vsync pacing, -4 = FPS counter, -5 = perf overlay.
+     */
+    private static readonly MODES: number[] = [ScreenMode.FIXED, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.FULLSCREEN, -2, -3, -4, -5, -1];
+    private static readonly WS: number[] = [0, 1024, 1280, 1600, 0, 0, 0, 0, 0, 0];
+    private static readonly HS: number[] = [0, 768, 720, 900, 0, 0, 0, 0, 0, 0];
 
     private static readonly COL_FILL: number = 0x2e2519;
     private static readonly COL_BORDER: number = 0x000000;
@@ -72,7 +77,19 @@ export default class ScreenSizeDialog {
         if (mode === -2) {
             // 3D detail toggle: half-res raster (fast) <-> full-res (sharp); non-FIXED only.
             ScreenMode.renderScale = ScreenMode.renderScale === 2 ? 1 : 2;
-            return; // stay open so the row label (below) reflects the new state
+            return; // toggles stay open so the row label reflects the new state
+        }
+        if (mode === -3) {
+            Timer.rafAlign = !Timer.rafAlign;
+            return;
+        }
+        if (mode === -4) {
+            Client.showFpsCounter = !Client.showFpsCounter;
+            return;
+        }
+        if (mode === -5) {
+            Client.showPerf = !Client.showPerf;
+            return;
         }
         ScreenSizeDialog.open = false;
         if (mode >= 0) {
@@ -115,6 +132,12 @@ export default class ScreenSizeDialog {
             let label = ScreenSizeDialog.LABELS[i];
             if (ScreenSizeDialog.MODES[i] === -2) {
                 label = ScreenMode.renderScale === 2 ? '3D detail: fast (half res)' : '3D detail: sharp (full res)';
+            } else if (ScreenSizeDialog.MODES[i] === -3) {
+                label = Timer.rafAlign ? 'VSync pacing: on' : 'VSync pacing: off';
+            } else if (ScreenSizeDialog.MODES[i] === -4) {
+                label = Client.showFpsCounter ? 'FPS counter: on' : 'FPS counter: off';
+            } else if (ScreenSizeDialog.MODES[i] === -5) {
+                label = Client.showPerf ? 'Perf overlay: on' : 'Perf overlay: off';
             }
             const lw = font.stringWid(label);
             const baseline = ry + font.maxAscent + (((ScreenSizeDialog.ROW_H - font.maxAscent - font.maxDescent) / 2) | 0);
