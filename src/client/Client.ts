@@ -2887,7 +2887,9 @@ export class Client extends GameShell {
         // WASD aliases the arrow keys for camera control (A=48, D=50, W=33, S=49 in the
         // client's internal keycodes), gated on the ::settings WASD toggle. While on,
         // the MOBA key filter consumes the letters so they never type into chat.
-        const wasd: boolean = Client.wasdMode;
+        // typing mode: the letters go to chat, so they must not ALSO pan the camera
+        // (arrow keys still steer while typing — Java WasdCamera behaviour)
+        const wasd: boolean = Client.wasdMode && !Client.mobaTyping;
         const var0: number = Client.localPlayer!.z + Client.macroCameraZ;
         if (ClientKeyboardListener.keyHeld[96] || (wasd && ClientKeyboardListener.keyHeld[48])) {
             Client.orbitCameraYawVelocity += ((-Client.orbitCameraYawVelocity - 24) / 2) | 0;
