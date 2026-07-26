@@ -787,7 +787,7 @@ export class Client extends GameShell {
                     const hcMaxX = Pix2D.clipMaxX;
                     const hcMaxY = Pix2D.clipMaxY;
                     Pix2D.setClipping(0, 0, Pix2D.width, Pix2D.height);
-                    const hintY = (ScreenMode.mode === ScreenMode.FIXED ? 357 : 357 + (GameShell.sHei - 503)) + 114;
+                    const hintY = (ScreenMode.mode === ScreenMode.FIXED ? 357 : 357 + (GameShell.sHei - 503)) + 94;
                     Client.p12.drawString('Press Enter to chat...', 24, hintY, 0xffff00, 0);
                     Pix2D.setClipping(hcMinX, hcMinY, hcMaxX, hcMaxY);
                 }

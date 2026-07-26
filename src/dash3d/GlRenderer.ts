@@ -92,7 +92,7 @@ export default class GlRenderer {
                     'void main() {' +
                     ' vec4 c;' +
                     ' if (vTex.z > 0.5) {' +
-                    '  vec2 uv = fract(vF.xy / vF.z / 128.0);' + // texel-space plane ratio, 7-bit wrap
+                    '  vec2 uv = fract(vF.xy / vF.z);' + // plane ratio is normalized 0..1 per tile (texel col = ratio*128)
                     '  c = texture2D(uAtlas, vTex.xy + uv * 0.125);' +
                     '  if (c.a < 0.5) discard;' + // cutout textures (texel 0)
                     '  c = vec4(c.rgb * vCol.rgb, vCol.a);' + // texel * light/128 (software >>7)

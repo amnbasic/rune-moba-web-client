@@ -3181,11 +3181,19 @@ export default class Pix3D {
         const f3c = (var34 * var36 - var33 * var37) * 16384;
         const f3x = ((var35 * var37 - var34 * var38) * 256 * fscale) / 8;
         const f3y = (var33 * var38 - var35 * var36) * 32 * fscale;
+        // the plane functions are evaluated CENTRE-relative (textureRaster:
+        // var74 = x - originX; var52 = y - originY), ratio already 0..1 per tile
+        const dx0 = x0 - Pix3D.originX;
+        const dy0 = y0 - Pix3D.originY;
+        const dx1 = x1 - Pix3D.originX;
+        const dy1 = y1 - Pix3D.originY;
+        const dx2 = x2 - Pix3D.originX;
+        const dy2 = y2 - Pix3D.originY;
         const ok = GlRenderer.pushTexturedTriangle(
             textureId,
-            x0, y0, l0, f1c + f1x * x0 + f1y * y0, f2c + f2x * x0 + f2y * y0, f3c + f3x * x0 + f3y * y0,
-            x1, y1, l1, f1c + f1x * x1 + f1y * y1, f2c + f2x * x1 + f2y * y1, f3c + f3x * x1 + f3y * y1,
-            x2, y2, l2, f1c + f1x * x2 + f1y * y2, f2c + f2x * x2 + f2y * y2, f3c + f3x * x2 + f3y * y2,
+            x0, y0, l0, f1c + f1x * dx0 + f1y * dy0, f2c + f2x * dx0 + f2y * dy0, f3c + f3x * dx0 + f3y * dy0,
+            x1, y1, l1, f1c + f1x * dx1 + f1y * dy1, f2c + f2x * dx1 + f2y * dy1, f3c + f3x * dx1 + f3y * dy1,
+            x2, y2, l2, f1c + f1x * dx2 + f1y * dy2, f2c + f2x * dx2 + f2y * dy2, f3c + f3x * dx2 + f3y * dy2,
             (256 - Pix3D.trans) / 256
         );
         if (!ok) {
