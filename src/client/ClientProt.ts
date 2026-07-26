@@ -37,6 +37,12 @@ export const enum ClientProt {
     MOVE_MINIMAPCLICK = 50,
     MOVE_OPCLICK = 36,
 
+    // MOBA fine plane: sub-tile ground click while fineStreamed (u16LE absX, u8 subX,
+    // u16LE absZ, u8 subZ — fixed size 6) and QERT skillshot cast (u8 ability, u8 plane,
+    // u16LE absX, u16LE absY, u8 subX, u8 subZ — fixed size 8)
+    FINEMOVE_CLICK = 61,
+    SKILLSHOT_CAST = 60,
+
     RESUME_PAUSEBUTTON = 240,
     RESUME_P_COUNTDIALOG = 78,
     RESUME_P_NAMEDIALOG = 150,

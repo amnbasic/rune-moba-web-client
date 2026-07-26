@@ -23,6 +23,7 @@ export default class ClientPlayer extends ClientEntity {
     headiconPrayer: number = -1;
     combatLevel: number = 0;
     skillLevel: number = 0;
+    mobaTeam: number = 0; // MOBA fog: custom team byte from the appearance tail (0/1/2)
     locStartCycle: number = 0;
     locEndCycle: number = 0;
     locOffsetX: number = 0;
@@ -125,6 +126,9 @@ export default class ClientPlayer extends ClientEntity {
         } else {
             this.skillLevel = 0;
         }
+        // MOBA fog of war: custom team byte appended after the vanilla tail (%champ_team;
+        // 0 none, 1 red, 2 green) — guarded so vanilla servers without it still parse.
+        this.mobaTeam = buf.pos < buf.data.length ? buf.g1() : 0;
         if (this.model === null) {
             this.model = new PlayerModel();
         }

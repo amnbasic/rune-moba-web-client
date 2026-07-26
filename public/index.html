@@ -51,6 +51,15 @@
             html:-webkit-full-screen {
                 background-color: black !important;
             }
+
+            /* ::fs fullscreen: letterbox the 765x503 bitmap to the screen (aspect-fit).
+               ClientMouseListener's fullscreen coordinate math assumes exactly this. */
+            canvas:fullscreen {
+                width: 100vw;
+                height: 100vh;
+                object-fit: contain;
+                background-color: black;
+            }
         </style>
     </head>
 

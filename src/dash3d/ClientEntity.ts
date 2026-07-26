@@ -66,6 +66,16 @@ export default abstract class ClientEntity extends ModelSource {
     field4109: number = 0; // current hitpoints (464 sends raw HP; bar width = cur*30/max at draw)
     maxHealth: number = 30;
 
+    // MOBA continuous combat plane (opcode-210/211/215 fine-pos stream): while true, the
+    // render position comes from FineStream.interpolate and the walk interpolator is
+    // bypassed. Stream state is ABSOLUTE fine coords (128 units/tile), rebuild-safe.
+    fineStreamed: boolean = false;
+    fineStreamFromX: number = 0;
+    fineStreamFromZ: number = 0;
+    fineStreamToX: number = 0;
+    fineStreamToZ: number = 0;
+    fineStreamStartCycle: number = 0;
+
     // jag::oldscape::ClientNpc::Teleport
     teleport(arg0: boolean, arg1: number, arg2: number): void {
         if (this.primarySeqId !== -1 && SeqType.list(this.primarySeqId).postanim_move === 1) {

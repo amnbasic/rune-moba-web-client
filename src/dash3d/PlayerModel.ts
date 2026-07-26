@@ -62,6 +62,17 @@ export default class PlayerModel {
         this.calcBaseId();
     }
 
+    /** 464 seq replaceheld wire value -> internal appearance encoding (0=hide, 256+idk, 512+obj) */
+    private static seqReplaceValue(v: number): number {
+        if (v >= 512) {
+            return (v - 512) | 0x40000000;
+        }
+        if (v >= 256) {
+            return (v - 256) | -2147483648;
+        }
+        return 0; // 0 (and any invalid low value) = hide the slot
+    }
+
     // jag::oldscape::rs2lib::PlayerModel::IdkChangePart
     idkChangePart(arg0: number, arg1: number): void {
         const var3 = PlayerModel.basePartMap[arg0];
@@ -115,23 +126,17 @@ export default class PlayerModel {
             for (let var8 = 0; var8 < 12; var8++) {
                 var7[var8] = this.appearance[var8];
             }
+            // 464 seq replaceheld values use the appearance-slot encoding (Java PlayerAppearance
+            // stores them RAW into the array): 0/65535 = hide, 256+idkId, 512+objId. rev-500
+            // treated them as raw obj ids -> invalid model -> e.g. no axe shown during
+            // inventory-axe woodcutting.
             if (arg3.replaceheldleft >= 0) {
-                if (arg3.replaceheldleft === 65535) {
-                    var7[5] = 0;
-                    var5 ^= 0xffffffff00000000n;
-                } else {
-                    var7[5] = arg3.replaceheldleft | 0x40000000;
-                    var5 ^= BigInt(var7[5]) << 32n;
-                }
+                var7[5] = PlayerModel.seqReplaceValue(arg3.replaceheldleft);
+                var5 ^= var7[5] === 0 ? 0xffffffff00000000n : BigInt(var7[5]) << 32n;
             }
             if (arg3.replaceheldright >= 0) {
-                if (arg3.replaceheldright === 65535) {
-                    var7[3] = 0;
-                    var5 ^= 0xffffffffn;
-                } else {
-                    var7[3] = arg3.replaceheldright | 0x40000000;
-                    var5 ^= BigInt(var7[3]);
-                }
+                var7[3] = PlayerModel.seqReplaceValue(arg3.replaceheldright);
+                var5 ^= var7[3] === 0 ? 0xffffffffn : BigInt(var7[3]);
             }
         }
         let var9 = PlayerModel.modelCache.find(var5) as ModelLit | null;

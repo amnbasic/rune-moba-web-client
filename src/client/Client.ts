@@ -2,6 +2,14 @@ import '#3rdparty/audio.js';
 
 import JagException from '#/callstack/JagException.js';
 import ClientBuild from '#/client/ClientBuild.js';
+import FogOfWar from '#/client/FogOfWar.js';
+import FineStream from '#/client/FineStream.js';
+import SkillshotOverlay from '#/client/SkillshotOverlay.js';
+import AbilityBarOverlay from '#/client/AbilityBarOverlay.js';
+import XpDropOverlay from '#/client/XpDropOverlay.js';
+import ScreenMode from '#/client/ScreenMode.js';
+import ScreenSizeDialog from '#/client/ScreenSizeDialog.js';
+import HudPanelOverlay from '#/client/HudPanelOverlay.js';
 import ClanChannelUser from '#/client/ClanChannelUser.js';
 import ClientScript from '#/client/ClientScript.js';
 import ClientDynamicProvider from '#/client/ClientDynamicProvider.js';
@@ -509,6 +517,10 @@ export class Client extends GameShell {
     static field3083: number = 320;
     static field4175: number = 256;
     static moveAction: string = Text.walkhere;
+    // MOBA League click scheme: menu rows in [sceneRowStart, sceneRowEnd) were built
+    // by minimenuBuildSceneActions this frame (walk-here / entity ops). 0/0 = none.
+    static sceneRowStart: number = 0;
+    static sceneRowEnd: number = 0;
     static menuX: number = 0;
     static menuY: number = 0;
     static menuWidth: number = 0;
@@ -2035,6 +2047,9 @@ export class Client extends GameShell {
 
         Client.keypresses = 0;
         while (ClientKeyboardListener.pollKey() && Client.keypresses < 128) {
+            if (Client.mobaFilterKey(ClientKeyboardListener.code, ClientKeyboardListener.ch)) {
+                continue;
+            }
             Client.keypressKeycodes[Client.keypresses] = ClientKeyboardListener.code;
             Client.keypressKeychars[Client.keypresses] = ClientKeyboardListener.ch;
             Client.keypresses++;
@@ -2095,7 +2110,20 @@ export class Client extends GameShell {
             const x: number = World.groundX;
             const z: number = World.groundZ;
             const localPlayer = Client.localPlayer!;
-            const success: boolean = Client.tryMove(0, 0, z, x, localPlayer.routeX[0], 0, 0, 0, true, 0, localPlayer.routeZ[0]);
+            let success: boolean;
+            if (SkillshotOverlay.armedAbility !== 0) {
+                // Armed skillshot: the ground click FIRES the cast at the picked tile
+                // instead of walking (Java GroundDecoration armed-fire branch). No
+                // click-cross, matching Java.
+                SkillshotOverlay.fireAtTile(x, z);
+                success = false;
+            } else if (localPlayer.fineStreamed) {
+                // fine-move mode: sub-tile click (opcode 61) — the server glides the
+                // player; no client-side path predictor (Java GroundDecoration hook)
+                success = FineStream.sendFineClick(x, z);
+            } else {
+                success = Client.tryMove(0, 0, z, x, localPlayer.routeX[0], 0, 0, 0, true, 0, localPlayer.routeZ[0]);
+            }
             World.groundX = -1;
 
             if (success) {
@@ -2238,11 +2266,17 @@ export class Client extends GameShell {
 
     // jag::oldscape::Client::GameDraw
     gameDraw(): void {
+        // MOBA screen modes: watch the ::fs varp / mode transitions, then stamp the
+        // pane-548 layout for the current mode before anything draws.
+        ScreenMode.tick();
+        ScreenMode.applyLayout();
         if (!Client.isMenuOpen) {
             Client.menuAction[0] = 1007;
             Client.menuVerb[0] = Text.cancel;
             Client.menuNumEntries = 1;
             Client.menuSubject[0] = '';
+            Client.sceneRowStart = 0;
+            Client.sceneRowEnd = 0;
         }
         if (Client.toplevelinterface !== -1) {
             Client.animateInterface(Client.toplevelinterface);
@@ -2395,6 +2429,9 @@ export class Client extends GameShell {
             Client.statBaseLevel[var14] = 0;
             Client.statXP[var14] = 0;
         }
+        XpDropOverlay.resetForLogout();
+        SkillshotOverlay.armedAbility = 0;
+        Client.mobaTyping = false;
         Client.clientpalette = LocType.clientpalette = NpcType.clientpalette = ObjType.clientpalette = new Int16Array(256);
         Client.sendCamera = true;
         Client.moveAction = Text.walkhere;
@@ -2743,6 +2780,14 @@ export class Client extends GameShell {
             }
         }
 
+        if (arg0.toLowerCase() === '::fs') {
+            // MOBA phase 2: ::fs opens the screen-size picker (ScreenSizeDialog); a
+            // preset click applies it via ScreenMode.applyPreset — that click is the
+            // user gesture the browser Fullscreen API requires. Fully client-side.
+            ScreenSizeDialog.open = !ScreenSizeDialog.open;
+            return;
+        }
+
         Client.out.p1Enc(ClientProt.CLIENT_CHEAT);
         Client.out.p1(arg0.length - 1);
         Client.out.pjstr(arg0.substring(2));
@@ -2757,7 +2802,11 @@ export class Client extends GameShell {
             ClientMouseListener.mouseX >= Client.viewportX &&
             ClientMouseListener.mouseX < Client.viewportX + Client.viewportW &&
             ClientMouseListener.mouseY >= Client.viewportY &&
-            ClientMouseListener.mouseY < Client.viewportY + Client.viewportH
+            ClientMouseListener.mouseY < Client.viewportY + Client.viewportH &&
+            !ScreenSizeDialog.open &&
+            !ScreenMode.cursorOverHud(ClientMouseListener.mouseX, ClientMouseListener.mouseY) &&
+            !AbilityBarOverlay.mouseOverBar(ClientMouseListener.mouseX, ClientMouseListener.mouseY) &&
+            !HudPanelOverlay.mouseOverGrid(ClientMouseListener.mouseX, ClientMouseListener.mouseY)
         ) {
             Client.cameraZoom += Client.mouseWheelRotation * 45;
             if (Client.cameraZoom < 300) {
@@ -3018,7 +3067,11 @@ export class Client extends GameShell {
 
     // jag::oldscape::Client::GlMoveEntity
     static moveEntity(arg0: number, arg1: ClientEntity): void {
-        if (arg1.exactMoveEnd > Client.loopCycle) {
+        if (arg1.fineStreamed) {
+            // MOBA fine plane: the stream owns the render position; yaw smoother and
+            // seq ticker below still run as normal (Java Client.method31)
+            FineStream.interpolate(arg1);
+        } else if (arg1.exactMoveEnd > Client.loopCycle) {
             Client.exactMove1(arg1);
         } else if (arg1.exactMoveStart < Client.loopCycle) {
             Client.routeMove(arg1);
@@ -3026,7 +3079,7 @@ export class Client extends GameShell {
             Client.exactMove2(arg1);
         }
 
-        if (arg1.x < 128 || arg1.z < 128 || arg1.x >= 13184 || arg1.z >= 13184) {
+        if (!arg1.fineStreamed && (arg1.x < 128 || arg1.z < 128 || arg1.x >= 13184 || arg1.z >= 13184)) {
             arg1.z = arg1.size * 64 + arg1.routeZ[0] * 128;
             arg1.x = arg1.routeX[0] * 128 + arg1.size * 64;
             arg1.exactMoveStart = 0;
@@ -3036,7 +3089,7 @@ export class Client extends GameShell {
             arg1.abortRoute();
         }
 
-        if (arg1 === Client.localPlayer && (arg1.x < 1536 || arg1.z < 1536 || arg1.x >= 11776 || arg1.z >= 11776)) {
+        if (!arg1.fineStreamed && arg1 === Client.localPlayer && (arg1.x < 1536 || arg1.z < 1536 || arg1.x >= 11776 || arg1.z >= 11776)) {
             arg1.spotanimId = -1;
             arg1.exactMoveStart = 0;
             arg1.exactMoveEnd = 0;
@@ -3531,6 +3584,10 @@ export class Client extends GameShell {
             SoftwareModelLit.pickedCount = 0;
         }
 
+        // MOBA: per-frame hover ground pick for the skillshot aim overlay — same
+        // coordinate mapping the model picker uses just above.
+        World.updateHoverPicking(ModelLit.mouseCheck, Client.minusedlevel, ModelLit.mouseX, ModelLit.mouseY);
+
         Client.doAudio();
         Pix2D.fillRect(x, y, width, height, 0x0);
         World.renderAll(Client.camX, Client.camY, Client.camZ, Client.camPitch, Client.camYaw, level, null, null, null, null, null, null, Client.localPlayer!.x >> 7, Client.localPlayer!.z >> 7);
@@ -3538,6 +3595,19 @@ export class Client extends GameShell {
         World.removeSprites();
         Client.entityOverlays(x, y, height, width);
         Client.coordArrow(x, y, height, width);
+        FineStream.viewportX = x;
+        FineStream.viewportY = y;
+        FineStream.viewportW = width;
+        FineStream.viewportH = height;
+        // MOBA overlay pass (Java Class24.method788 order): XP drops, skillshot aim,
+        // ability bar, then the fine-plane debug labels on top.
+        XpDropOverlay.render(x, y, width);
+        SkillshotOverlay.render(x, y, width, height);
+        AbilityBarOverlay.render(x, y, width, height);
+        HudPanelOverlay.render();
+        FineStream.renderDebug(x, y);
+        // Screen-size picker (::fs): modal, drawn last so it sits on top of everything.
+        ScreenSizeDialog.render(x, y, width, height);
         (Pix3D.textureManager as TextureManager).runAnims(Client.worldUpdateNum);
         Client.otherOverlays(x, height, y, width);
         Client.camX = camX;
@@ -3554,6 +3624,15 @@ export class Client extends GameShell {
         }
         if (!Client.js5Loading && !Client.isMenuOpen && x <= ClientMouseListener.mouseX && ClientMouseListener.mouseX < width + x && y <= ClientMouseListener.mouseY && ClientMouseListener.mouseY < height + y) {
             Client.minimenuBuildSceneActions(ClientMouseListener.mouseY, x, height, width, y, ClientMouseListener.mouseX);
+            Client.sceneRowEnd = Client.menuNumEntries;
+        }
+        // MOBA overlay menu rows, injected LAST so a hovered overlay control is the
+        // top (left-click) row — the ability bar beats "Walk here", like Java's
+        // click-frame injection in GraphicsBuffer.method682.
+        if (!Client.js5Loading && !Client.isMenuOpen) {
+            XpDropOverlay.addMenuItemsIfHovered(ClientMouseListener.mouseX, ClientMouseListener.mouseY);
+            AbilityBarOverlay.addMenuItemsIfHovered(ClientMouseListener.mouseX, ClientMouseListener.mouseY);
+            HudPanelOverlay.addMenuItemsIfHovered(ClientMouseListener.mouseX, ClientMouseListener.mouseY);
         }
     }
 
@@ -3577,6 +3656,9 @@ export class Client extends GameShell {
                 var4 = BigInt(Client.playerIds[var2]) << 32n;
             }
             if (var3 !== null && var3.ready()) {
+                if (!arg0 && FogOfWar.hidePlayer(var3)) {
+                    continue; // MOBA fog: fogged enemy — never inserted = never seen/clicked
+                }
                 const var6: number = var3.x >> 7;
                 var3.lowMem = false;
                 if (((Client.lowMem && Client.playerCount > 50) || Client.playerCount > 200) && !arg0 && var3.readyanim === var3.secondarySeqId) {
@@ -3609,6 +3691,9 @@ export class Client extends GameShell {
             const var2: ClientNpc | null = Client.npc[Client.npcIds[var1]];
             let var3: SceneTag = (BigInt(Client.npcIds[var1]) << 32n) | 0x20000000n;
             if (var2 !== null && var2.ready() && arg0 === var2.type!.alwaysontop && var2.type!.isMultiNpcVisible()) {
+                if (FogOfWar.hideNpc(var2)) {
+                    continue; // MOBA fog: fogged non-ally npc
+                }
                 const var5: number = var2.x >> 7;
                 const var6: number = var2.z >> 7;
                 if (var5 >= 0 && var5 < 104 && var6 >= 0 && var6 < 104) {
@@ -4039,7 +4124,7 @@ export class Client extends GameShell {
         Client.getSpecialArea();
 
         if (Client.showFps) {
-            const x: number = arg0 + 512 - 5;
+            const x: number = arg0 + ScreenMode.viewportWidth - 5;
             let y: number = arg2 + 20;
 
             let colour: number = 0xffff00;
@@ -4397,6 +4482,13 @@ export class Client extends GameShell {
                     Client.field3754++;
                 }
             }
+        }
+        // Wait for the (tiny) texture-defs group too: the scene build bakes minimap + lowmem
+        // ground colours from texture averages — building early baked water/roofs black until
+        // the next region rebuild.
+        if (Pix3D.textureManager instanceof TextureManager && !Pix3D.textureManager.defsReady()) {
+            var0 = false;
+            Client.field3754++;
         }
         {
             const m = ClientBuild.field3221!.filter(x => x !== null).length;
@@ -5943,22 +6035,71 @@ export class Client extends GameShell {
             }
 
             if (Client.ptype === 4211) {
-                // MOBA fine-plane LOCAL glide (211): [i32 fineX LE][i32 fineZ LE] in WORLD fine units
-                // (tile*128 + subtile; fineX == -1 ends the stream). On the fine plane (C2b/combat)
-                // ground-clicks glide via this stream instead of a tile walk, so without handling it
-                // the player never moves client-side. Drive the local player tile-by-tile through the
-                // normal soft-walk path so it walks + animates. (Sub-tile smoothness would need the
-                // full continuous-space render path; this makes walking actually work.)
+                // MOBA fine-plane LOCAL glide (211): [i32 fineX LE][i32 fineZ LE] in ABSOLUTE fine
+                // units (tile*128 + subtile; fineX == -1 = end-of-stream sentinel). FineStream owns
+                // the render position while streamed; the sync channel keeps owning the logical
+                // tile (routeX/Z[0]) via the walk bits the server emits for shadow steps.
                 const fineX: number = Client.in.g4_alt1();
                 const fineZ: number = Client.in.g4_alt1();
-                const fp = Client.localPlayer;
-                if (fp !== null && fineX !== -1) {
-                    const stileX: number = (fineX >> 7) - Client.mapBuildBaseX;
-                    const stileZ: number = (fineZ >> 7) - Client.mapBuildBaseZ;
-                    if (stileX !== fp.routeX[0] || stileZ !== fp.routeZ[0]) {
-                        fp.teleport(false, stileX, stileZ);
-                    }
-                }
+                FineStream.onLocalFinePos(fineX, fineZ);
+                Client.ptype = -1;
+                return true;
+            }
+
+            if (Client.ptype === 4210) {
+                // MOBA fine-plane NPC glide (210): [u16 BE npc worldIndex][i32 LE fineX][i32 LE fineZ]
+                const fnIndex: number = Client.in.g2();
+                const fnX: number = Client.in.g4_alt1();
+                const fnZ: number = Client.in.g4_alt1();
+                FineStream.onFinePos(fnIndex, fnX, fnZ);
+                Client.ptype = -1;
+                return true;
+            }
+
+            if (Client.ptype === 4215) {
+                // MOBA fine-plane REMOTE player glide (215): [u16 BE player index][i32 LE fineX][i32 LE fineZ]
+                const fpIndex: number = Client.in.g2();
+                const fpX: number = Client.in.g4_alt1();
+                const fpZ: number = Client.in.g4_alt1();
+                FineStream.onRemotePlayerFinePos(fpIndex, fpX, fpZ);
+                Client.ptype = -1;
+                return true;
+            }
+
+            if (Client.ptype === 4212) {
+                // MOBA fine missile spawn (212): [u16 BE id][i32 LE startX][i32 LE startZ]
+                // [i32 LE endX][i32 LE endZ][u16 BE durationCycles][u16 BE spotanim][u8 heightOff]
+                const msId: number = Client.in.g2();
+                const msSX: number = Client.in.g4_alt1();
+                const msSZ: number = Client.in.g4_alt1();
+                const msEX: number = Client.in.g4_alt1();
+                const msEZ: number = Client.in.g4_alt1();
+                const msDur: number = Client.in.g2();
+                const msSa: number = Client.in.g2();
+                const msH: number = Client.in.g1();
+                FineStream.onMissileSpawn(msId, msSX, msSZ, msEX, msEZ, msDur, msSa, msH);
+                Client.ptype = -1;
+                return true;
+            }
+
+            if (Client.ptype === 4213) {
+                // MOBA fine missile impact (213): [u16 BE id][i32 LE hitX][i32 LE hitZ]
+                // [u16 BE impactSpotanim][u8 height][u8 keepFlying (1 = pierced, keep in flight)]
+                const miId: number = Client.in.g2();
+                const miX: number = Client.in.g4_alt1();
+                const miZ: number = Client.in.g4_alt1();
+                const miSa: number = Client.in.g2();
+                const miH: number = Client.in.g1();
+                const miKeep: number = Client.in.g1();
+                FineStream.onMissileImpact(miId, miX, miZ, miSa, miH, miKeep !== 0);
+                Client.ptype = -1;
+                return true;
+            }
+
+            if (Client.ptype === 4216) {
+                // MOBA fine-plane debug overlay toggle (216, ::fm 6): payload byte unused
+                Client.in.g1();
+                FineStream.debugOverlay = !FineStream.debugOverlay;
                 Client.ptype = -1;
                 return true;
             }
@@ -6228,8 +6369,8 @@ export class Client extends GameShell {
                 const comId = Client.in.g4_alt3();
                 const inv = IfType.get(comId)!;
                 for (let i: number = 0; i < inv.linkObjType!.length; i++) {
-                    inv.linkObjType![i] = -1;
                     inv.linkObjType![i] = 0;
+                    inv.linkObjNumber![i] = 0;
                 }
                 Client.componentUpdated(inv);
 
@@ -7186,6 +7327,7 @@ export class Client extends GameShell {
                 Client.statXP[stat] = xp;
                 Client.statEffectiveLevel[stat] = level;
                 Client.statBaseLevel[stat] = 1;
+                XpDropOverlay.onUpdateSkill(stat, xp);
 
                 for (let i: number = 0; i < 98; i++) {
                     if (xp >= Skills.skillxp[i]) {
@@ -8642,9 +8784,92 @@ export class Client extends GameShell {
         }
     }
 
+    // MOBA typing gate (Java WasdCamera.isTyping + Class18.keyPressed): while NOT
+    // typing, Q/E/R are ability slot keys and Enter opens the chatbox; '/' or ':'
+    // open it and pass through (for /pm :clan). Enter (send) or Escape closes it.
+    // Modal chatbox dialogs (name/amount input — a sub on window 548 child 79)
+    // always type. Only active on the in-game pane (548) so login/title typing is
+    // untouched.
+    static mobaTyping: boolean = false;
+    private static mobaSwallowCharA: number = -1;
+    private static mobaSwallowCharB: number = -1;
+
+    /** True = the key was consumed by the MOBA layer (drop it from the queue). */
+    private static mobaFilterKey(code: number, ch: number): boolean {
+        if (Client.toplevelinterface !== 548) {
+            Client.mobaTyping = false;
+            return false;
+        }
+        // a consumed Q/E/R keydown is followed by its keypress char — swallow it
+        if (ch !== -1 && (ch === Client.mobaSwallowCharA || ch === Client.mobaSwallowCharB)) {
+            Client.mobaSwallowCharA = -1;
+            Client.mobaSwallowCharB = -1;
+            return true;
+        }
+        if (code !== -1) {
+            Client.mobaSwallowCharA = -1;
+            Client.mobaSwallowCharB = -1;
+        }
+        if (Client.subinterfaces.find(BigInt((548 << 16) | 79)) !== null) {
+            return false; // chatbox dialog up (name/amount input): everything types
+        }
+        if (Client.mobaTyping) {
+            if (code === 84 || code === 0) {
+                // Enter (the chat input sends) / Escape: leave typing, pass through
+                Client.mobaTyping = false;
+            }
+            return false;
+        }
+        if (code === 0) {
+            // Escape: always close the open interface + notify the server (opcode 71),
+            // like the Java client's ESC branch (Class18). Consumed.
+            Client.closeModal();
+            return true;
+        }
+        if (ch === 47 || ch === 58 || ch === 59 || ch === 63) {
+            // '/' ':' ';' '?' (the Java oracle gates on physical VK 47/59 in any shift
+            // state): start typing, let the char reach the chat input
+            Client.mobaTyping = true;
+            return false;
+        }
+        if (code === 84) {
+            // Enter: start typing (consumed — nothing pending to send)
+            Client.mobaTyping = true;
+            return true;
+        }
+        if (code === 32) {
+            SkillshotOverlay.slotPressed(SkillshotOverlay.SLOT_Q);
+            Client.mobaSwallowCharA = 113; // 'q'
+            Client.mobaSwallowCharB = 81; // 'Q'
+            return true;
+        }
+        if (code === 34) {
+            SkillshotOverlay.slotPressed(SkillshotOverlay.SLOT_W);
+            Client.mobaSwallowCharA = 101; // 'e'
+            Client.mobaSwallowCharB = 69; // 'E'
+            return true;
+        }
+        if (code === 35) {
+            SkillshotOverlay.slotPressed(SkillshotOverlay.SLOT_E);
+            Client.mobaSwallowCharA = 114; // 'r'
+            Client.mobaSwallowCharB = 82; // 'R'
+            return true;
+        }
+        return false;
+    }
+
     // jag::oldscape::minimenu::Minimenu::GameLoop
     mouseLoop(): void {
         if (Client.objDragCom !== null || Client.dragCom !== null) {
+            return;
+        }
+
+        // Screen-size picker is MODAL: clicks go to it and never leak to the scene/menus.
+        if (ScreenSizeDialog.open) {
+            if (ClientMouseListener.mouseClickButton !== 0) {
+                ScreenSizeDialog.handleClick(ClientMouseListener.mouseClickX, ClientMouseListener.mouseClickY);
+                ClientMouseListener.mouseClickButton = 0;
+            }
             return;
         }
 
@@ -8706,6 +8931,29 @@ export class Client extends GameShell {
                         return;
                     }
                 }
+            }
+
+            // MOBA League controls (Java GraphicsBuffer.method682): when the TOP row is a
+            // SCENE row (walk-here / entity op over the world), LEFT-click is skillshot-only
+            // (armed -> fire at the hovered tile/unit, unarmed -> nothing — no walk, no
+            // attack) and RIGHT-click cancels any arm then performs the action IMMEDIATELY
+            // (League right-click move/attack; no context menu over the world). Overlay and
+            // interface rows keep classic clicks — the range markers exclude them.
+            const mlTop: number = Client.menuNumEntries - 1;
+            if (button !== 0 && Client.sceneRowEnd > 0 && mlTop >= Client.sceneRowStart && mlTop < Client.sceneRowEnd) {
+                if (button === 1) {
+                    if (SkillshotOverlay.armedAbility !== 0) {
+                        if (SkillshotOverlay.isUnitTarget(SkillshotOverlay.armedAbility)) {
+                            SkillshotOverlay.fireUnitTarget();
+                        } else if (World.hoverGroundX !== -1 && World.hoverGroundZ !== -1) {
+                            SkillshotOverlay.fireAtTile(World.hoverGroundX, World.hoverGroundZ);
+                        }
+                    }
+                } else {
+                    SkillshotOverlay.armedAbility = 0;
+                    Client.doAction(mlTop);
+                }
+                return;
             }
 
             if (button === 1 && ((Client.oneMouseButton === 1 && Client.menuNumEntries > 2) || Client.isAddFriendOption(Client.menuNumEntries - 1))) {
@@ -8871,6 +9119,10 @@ export class Client extends GameShell {
             var3 -= 2000;
         }
         const var6: number = Number(BigInt.asIntN(32, BigInt(Client.menuParamA[arg0])));
+        // MOBA overlay actions (1700-1999 range, Java StreamBuffer.method221 hooks).
+        if (XpDropOverlay.dispatchMenuAction(var3) || AbilityBarOverlay.dispatchMenuAction(var3) || HudPanelOverlay.dispatchMenuAction(var3)) {
+            return;
+        }
         if (var3 === 31) {
             const var7: ClientPlayer | null = Client.players[var6];
             if (var7 !== null) {
@@ -9185,7 +9437,13 @@ export class Client extends GameShell {
             Client.selectedItem = var1;
         }
         if (var3 === 10) {
-            World.updateMousePicking(Client.minusedlevel, var1, var2);
+            if (SkillshotOverlay.armedAbility !== 0 && SkillshotOverlay.isUnitTarget(SkillshotOverlay.armedAbility)) {
+                // Armed UNIT-TARGET cast: the click fires at the hovered unit (no
+                // ground tile involved); no hovered unit keeps the arm up. Never walks.
+                SkillshotOverlay.fireUnitTarget();
+            } else {
+                World.updateMousePicking(Client.minusedlevel, var1, var2);
+            }
         }
         if (var3 === 1004) {
             Client.interactWithLoc(var2, var4, var1);
@@ -9693,7 +9951,12 @@ export class Client extends GameShell {
     }
 
     static minimenuBuildSceneActions(arg0: number, arg1: number, arg2: number, arg3: number, arg4: number, arg5: number): void {
-        if (Client.useMode === 0 && !Client.targetMode) {
+        // MOBA: mark the SCENE-row range for the League click scheme (mouseLoop) —
+        // rows in [sceneRowStart, sceneRowEnd) are world rows (walk-here/entity ops).
+        Client.sceneRowStart = Client.menuNumEntries;
+        // MOBA: the ground tile behind the ability bar / HUD grid must not offer
+        // "Walk here" — their own menu rows are the action (Java's GroundDecoration guard).
+        if (Client.useMode === 0 && !Client.targetMode && !AbilityBarOverlay.mouseOverBar(arg5, arg0) && !HudPanelOverlay.mouseOverGrid(arg5, arg0)) {
             const var6: number = Pix3D.minX;
             const var7: number = Pix3D.maxX;
             const var8: number = Pix3D.minY;
@@ -10245,6 +10508,11 @@ export class Client extends GameShell {
             if (child.v3 && (childClipLeft >= childClipRight || childClipTop >= childClipBottom)) {
                 continue;
             }
+            if (child.parentId === (548 << 16) + 82) {
+                // MOBA HUD: bevelled cell marks under the six inventory slots (the
+                // stock com_83 panel art is parked in non-FIXED mode).
+                HudPanelOverlay.renderBacking();
+            }
             if (child.clientCode === 1337) {
                 Client.menuMouseY = childX;
                 Client.menuMouseX = childY;
@@ -10308,6 +10576,7 @@ export class Client extends GameShell {
                 Client.menuVerb[0] = Text.cancel;
                 Client.menuSubject[0] = '';
                 Client.menuAction[0] = 1007;
+                Client.sceneRowEnd = 0; // scene rows wiped — invalidate the League-click range
             }
             const mouseY = ClientMouseListener.mouseY;
             if (!Client.isMenuOpen && mouseX >= childClipLeft && mouseY >= childClipTop && mouseX < childClipRight && childClipBottom > mouseY) {
@@ -10349,6 +10618,7 @@ export class Client extends GameShell {
                         Client.menuVerb[0] = Text.cancel;
                         Client.menuSubject[0] = '';
                         Client.menuAction[0] = 1007;
+                        Client.sceneRowEnd = 0; // scene rows wiped — invalidate the League-click range
                     }
                     ready = this.drawInterface(childClipBottom, sub.id, childClipTop, drawSlot, childY, childClipLeft, childX, childClipRight) && ready;
                 }
@@ -11606,6 +11876,12 @@ export class Client extends GameShell {
     static componentUpdated(arg0: IfType | null): void {
         if (Client.componentDrawTime === arg0!.drawTime) {
             Client.componentDirtyArea[arg0!.drawCount] = true;
+        } else {
+            // drawTime bookkeeping doesn't match (component updated while covered / not drawn
+            // this cycle) — precise marking would silently no-op and leave stale pixels until
+            // a reopen (e.g. equipment-screen text after dropping a weapon). Full redraw is
+            // just flag-marking; the actual repaint happens once next frame.
+            Client.redrawAllComponents();
         }
     }
 
@@ -12176,7 +12452,7 @@ export class Client extends GameShell {
                     if (npcType !== null && npcType.multinpc) {
                         npcType = npcType.getMultiNpc();
                     }
-                    if (npcType !== null && npcType.minimap && npcType.active) {
+                    if (npcType !== null && npcType.minimap && npcType.active && !FogOfWar.hideNpc(npc)) {
                         anchorX = ((npc.x / 32) | 0) - ((localPlayer.x / 32) | 0);
                         anchorY = ((npc.z / 32) | 0) - ((localPlayer.z / 32) | 0);
                         Client.minimapDrawDot(y, x, anchorY, com, Client.mapdots![1], anchorX);
@@ -12186,7 +12462,7 @@ export class Client extends GameShell {
 
             for (let i: number = 0; i < Client.playerCount; i++) {
                 const player: ClientPlayer | null = Client.players[Client.playerIds[i]];
-                if (player && player.ready()) {
+                if (player && player.ready() && !FogOfWar.hidePlayer(player)) {
                     anchorX = ((player.x / 32) | 0) - ((localPlayer.x / 32) | 0);
                     anchorY = ((player.z / 32) | 0) - ((localPlayer.z / 32) | 0);
                     let friend = false;
@@ -12240,6 +12516,7 @@ export class Client extends GameShell {
                 anchorY = Client.minimapFlagZ * 4 + 2 - ((localPlayer.z / 32) | 0);
                 Client.minimapDrawDot(y, x, anchorY, com, Client.mapflag, anchorX);
             }
+            FogOfWar.drawMinimapFog(x, y, com); // MOBA fog: darken unseen tiles (after dots)
             Pix2D.fillRect(((com.renderWidth / 2) | 0) + x - 1, y - -((com.renderHeight / 2) | 0) + -1, 3, 3, 0xffffff);
         }
         Client.componentBlitArea[redrawIndex] = true;

@@ -1,3 +1,4 @@
+import FogOfWar from '#/client/FogOfWar.js';
 import { BuildArea } from '#/dash3d/CollisionMap.js';
 import Occlude from '#/dash3d/Occlude.js';
 
@@ -76,6 +77,15 @@ export default class World {
     static clickX: number = 0;
     static clickY: number = 0;
     static groundZ: number = -1;
+    // MOBA skillshot aim: per-frame HOVER ground pick — the same triangle test as
+    // the click pick but armed every frame with the current mouse, so the aim
+    // overlay has a hovered tile without a click (Java World.anInt1420/anInt1413).
+    static hoverPick: boolean = false;
+    static hoverLev: number = 0;
+    static hoverX: number = 0;
+    static hoverY: number = 0;
+    static hoverGroundX: number = -1;
+    static hoverGroundZ: number = -1;
     static lowMem: boolean = true;
     static cycleNo: number = 0;
     static cameraSinX: number = 0;
@@ -754,6 +764,16 @@ export default class World {
         World.groundZ = -1;
     }
 
+    /** Arm (or disarm) the per-frame hover ground pick before renderAll. */
+    static updateHoverPicking(active: boolean, lev: number, x: number, y: number): void {
+        World.hoverPick = active;
+        World.hoverLev = lev;
+        World.hoverX = x;
+        World.hoverY = y;
+        World.hoverGroundX = -1;
+        World.hoverGroundZ = -1;
+    }
+
     static renderAll(
         arg0: number,
         arg1: number,
@@ -1312,7 +1332,7 @@ export default class World {
                                                 World.renderQuickGround(var2.quickGround, var6, World.cameraSinX, World.cameraCosX, World.cameraSinY, World.cameraCosY, var3, var4, true);
                                             } else {
                                                 var17 = true;
-                                                if (var2.quickGround.colourNE !== 12345678 || (World.click && var5 <= World.clickLev)) {
+                                                if (var2.quickGround.colourNE !== 12345678 || (World.click && var5 <= World.clickLev) || (World.hoverPick && var5 <= World.hoverLev)) {
                                                     World.renderQuickGround(var2.quickGround, var6, World.cameraSinX, World.cameraCosX, World.cameraSinY, World.cameraCosY, var3, var4, false);
                                                 }
                                             }
@@ -1709,10 +1729,26 @@ export default class World {
         const var50: number = Pix3D.originX + (((var39 << 9) / var43) | 0);
         const var51: number = Pix3D.originY + (((var42 << 9) / var43) | 0);
         Pix3D.trans = 0;
+        // MOBA fog Stage B: darken this tile's corner colours as it draws (ground draws before
+        // walls/locs/entities, so objects standing in fog are unaffected — correct occlusion)
+        let fogNE: number = ground.colourNE;
+        let fogNW: number = ground.colourNW;
+        let fogSE: number = ground.colourSE;
+        let fogSW: number = ground.colourSW;
+        if (FogOfWar.enabled()) {
+            fogNE = FogOfWar.shadeGround(fogNE, tileX + 1, tileZ + 1);
+            fogNW = FogOfWar.shadeGround(fogNW, tileX, tileZ + 1);
+            fogSE = FogOfWar.shadeGround(fogSE, tileX + 1, tileZ);
+            fogSW = FogOfWar.shadeGround(fogSW, tileX, tileZ);
+        }
         if ((var48 - var50) * (var47 - var51) - (var49 - var51) * (var46 - var50) > 0) {
             if (World.click && World.insideTriangle(World.clickX + Pix3D.originX, World.clickY + Pix3D.originY, var49, var51, var47, var48, var50, var46)) {
                 World.groundX = tileX;
                 World.groundZ = tileZ;
+            }
+            if (World.hoverPick && World.insideTriangle(World.hoverX + Pix3D.originX, World.hoverY + Pix3D.originY, var49, var51, var47, var48, var50, var46)) {
+                World.hoverGroundX = tileX;
+                World.hoverGroundZ = tileZ;
             }
             if (!checkOnly) {
                 Pix3D.hclip = false;
@@ -1720,16 +1756,16 @@ export default class World {
                     Pix3D.hclip = true;
                 }
                 if (ground.texture === -1) {
-                    if (ground.colourNE !== 12345678) {
-                        Pix3D.gouraudTriangle(var49, var51, var47, var48, var50, var46, ground.colourNE, ground.colourNW, ground.colourSE);
+                    if (fogNE !== 12345678) {
+                        Pix3D.gouraudTriangle(var49, var51, var47, var48, var50, var46, fogNE, fogNW, fogSE);
                     }
                 } else if (World.lowMem) {
                     const var52: number = Pix3D.textureManager.getAverageRgb(ground.texture);
-                    Pix3D.gouraudTriangle(var49, var51, var47, var48, var50, var46, World.adjustHslLightness(var52, ground.colourNE), World.adjustHslLightness(var52, ground.colourNW), World.adjustHslLightness(var52, ground.colourSE));
+                    Pix3D.gouraudTriangle(var49, var51, var47, var48, var50, var46, World.adjustHslLightness(var52, fogNE), World.adjustHslLightness(var52, fogNW), World.adjustHslLightness(var52, fogSE));
                 } else if (ground.flat) {
-                    Pix3D.textureTriangleAffine(var49, var51, var47, var48, var50, var46, ground.colourNE, ground.colourNW, ground.colourSE, var21, var27, var39, var24, var30, var42, var25, var31, var43, ground.texture);
+                    Pix3D.textureTriangleAffine(var49, var51, var47, var48, var50, var46, fogNE, fogNW, fogSE, var21, var27, var39, var24, var30, var42, var25, var31, var43, ground.texture);
                 } else {
-                    Pix3D.textureTriangleAffine(var49, var51, var47, var48, var50, var46, ground.colourNE, ground.colourNW, ground.colourSE, var33, var39, var27, var36, var42, var30, var37, var43, var31, ground.texture);
+                    Pix3D.textureTriangleAffine(var49, var51, var47, var48, var50, var46, fogNE, fogNW, fogSE, var33, var39, var27, var36, var42, var30, var37, var43, var31, ground.texture);
                 }
             }
         }
@@ -1740,6 +1776,10 @@ export default class World {
             World.groundX = tileX;
             World.groundZ = tileZ;
         }
+        if (World.hoverPick && World.insideTriangle(World.hoverX + Pix3D.originX, World.hoverY + Pix3D.originY, var45, var47, var51, var44, var46, var50)) {
+            World.hoverGroundX = tileX;
+            World.hoverGroundZ = tileZ;
+        }
         if (checkOnly) {
             return;
         }
@@ -1749,13 +1789,13 @@ export default class World {
         }
         if (ground.texture !== -1) {
             if (!World.lowMem) {
-                Pix3D.textureTriangleAffine(var45, var47, var51, var44, var46, var50, ground.colourSW, ground.colourSE, ground.colourNW, var21, var27, var39, var24, var30, var42, var25, var31, var43, ground.texture);
+                Pix3D.textureTriangleAffine(var45, var47, var51, var44, var46, var50, fogSW, fogSE, fogNW, var21, var27, var39, var24, var30, var42, var25, var31, var43, ground.texture);
                 return;
             }
             const var53: number = Pix3D.textureManager.getAverageRgb(ground.texture);
-            Pix3D.gouraudTriangle(var45, var47, var51, var44, var46, var50, World.adjustHslLightness(var53, ground.colourSW), World.adjustHslLightness(var53, ground.colourSE), World.adjustHslLightness(var53, ground.colourNW));
-        } else if (ground.colourSW !== 12345678) {
-            Pix3D.gouraudTriangle(var45, var47, var51, var44, var46, var50, ground.colourSW, ground.colourSE, ground.colourNW);
+            Pix3D.gouraudTriangle(var45, var47, var51, var44, var46, var50, World.adjustHslLightness(var53, fogSW), World.adjustHslLightness(var53, fogSE), World.adjustHslLightness(var53, fogNW));
+        } else if (fogSW !== 12345678) {
+            Pix3D.gouraudTriangle(var45, var47, var51, var44, var46, var50, fogSW, fogSE, fogNW);
         }
     }
 
@@ -1797,14 +1837,28 @@ export default class World {
                     World.groundX = arg5;
                     World.groundZ = arg6;
                 }
+                if (World.hoverPick && World.insideTriangle(World.hoverX + Pix3D.originX, World.hoverY + Pix3D.originY, var26, var27, var28, var23, var24, var25)) {
+                    World.hoverGroundX = arg5;
+                    World.hoverGroundZ = arg6;
+                }
                 if (!arg7) {
                     Pix3D.hclip = false;
                     if (var23 < 0 || var24 < 0 || var25 < 0 || var23 > Pix3D.sizeX || var24 > Pix3D.sizeX || var25 > Pix3D.sizeX) {
                         Pix3D.hclip = true;
                     }
+                    // MOBA fog Stage B: darken this face's vertex colours by the fog at each
+                    // vertex's tile corner (vertex coords are scene-local fine; >>7 = tile)
+                    let fogA: number = arg0.faceColourA[var19];
+                    let fogB: number = arg0.faceColourB[var19];
+                    let fogC: number = arg0.faceColourC[var19];
+                    if (FogOfWar.enabled()) {
+                        fogA = FogOfWar.shadeGround(fogA, arg0.vertexX[var20] >> 7, arg0.vertexZ[var20] >> 7);
+                        fogB = FogOfWar.shadeGround(fogB, arg0.vertexX[var21] >> 7, arg0.vertexZ[var21] >> 7);
+                        fogC = FogOfWar.shadeGround(fogC, arg0.vertexX[var22] >> 7, arg0.vertexZ[var22] >> 7);
+                    }
                     if (arg0.faceTexture === null || arg0.faceTexture[var19] === -1) {
-                        if (arg0.faceColourA[var19] !== 12345678) {
-                            Pix3D.gouraudTriangle(var26, var27, var28, var23, var24, var25, arg0.faceColourA[var19], arg0.faceColourB[var19], arg0.faceColourC[var19]);
+                        if (fogA !== 12345678) {
+                            Pix3D.gouraudTriangle(var26, var27, var28, var23, var24, var25, fogA, fogB, fogC);
                         }
                     } else if (World.lowMem) {
                         const var29: number = Pix3D.textureManager.getAverageRgb(arg0.faceTexture[var19]);
@@ -1815,9 +1869,9 @@ export default class World {
                             var23,
                             var24,
                             var25,
-                            World.adjustHslLightness(var29, arg0.faceColourA[var19]),
-                            World.adjustHslLightness(var29, arg0.faceColourB[var19]),
-                            World.adjustHslLightness(var29, arg0.faceColourC[var19])
+                            World.adjustHslLightness(var29, fogA),
+                            World.adjustHslLightness(var29, fogB),
+                            World.adjustHslLightness(var29, fogC)
                         );
                     } else if (arg0.flat) {
                         Pix3D.textureTriangleAffine(
@@ -1827,9 +1881,9 @@ export default class World {
                             var23,
                             var24,
                             var25,
-                            arg0.faceColourA[var19],
-                            arg0.faceColourB[var19],
-                            arg0.faceColourC[var19],
+                            fogA,
+                            fogB,
+                            fogC,
                             Ground.drawTextureVertexX[0],
                             Ground.drawTextureVertexX[1],
                             Ground.drawTextureVertexX[3],
@@ -1849,9 +1903,9 @@ export default class World {
                             var23,
                             var24,
                             var25,
-                            arg0.faceColourA[var19],
-                            arg0.faceColourB[var19],
-                            arg0.faceColourC[var19],
+                            fogA,
+                            fogB,
+                            fogC,
                             Ground.drawTextureVertexX[var20],
                             Ground.drawTextureVertexX[var21],
                             Ground.drawTextureVertexX[var22],

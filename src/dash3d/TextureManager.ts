@@ -68,6 +68,35 @@ export default class TextureManager implements TextureProvider {
         return this.averageRgb[arg0] & 0xffff;
     }
 
+    private defsLoaded: boolean = false;
+
+    /**
+     * True once the texture-def group (idx 9 group 0) is downloaded and every def has been
+     * decoded (filling opaque[]/averageRgb[]). The scene build bakes minimap + lowmem ground
+     * colours from averageRgb — building before the defs arrive baked water/roofs black until
+     * the next region rebuild.
+     */
+    defsReady(): boolean {
+        if (this.defsLoaded) {
+            return true;
+        }
+        if (this.averageRgb.length === 0) {
+            this.defsLoaded = true;
+            return true;
+        }
+        let any = false;
+        for (let i = 0; i < this.averageRgb.length; i++) {
+            if (this.loadTexture(i) !== null) {
+                any = true;
+            }
+        }
+        if (!any) {
+            return false; // group 0 still downloading (loadTexture triggered the request)
+        }
+        this.defsLoaded = true;
+        return true;
+    }
+
     loadTexture(arg0: number): GlTexture | null {
         const var2 = this.textureCache.find(BigInt(arg0));
         if (var2 !== null) {

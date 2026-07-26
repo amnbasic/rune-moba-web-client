@@ -80,9 +80,13 @@ export default class Statics {
         m[163] = 68; // run energy
         m[108] = 117; // game message
         m[77] = 4977; // window pane — 464 body is LEShortA windowId only (no mode byte like rev-500 86)
-        // MOBA fine-plane local-player glide (211): render the smooth sub-tile movement instead of
-        // skipping it, so ground-clicks while on the fine plane (C2b/combat) actually move you.
+        // MOBA fine plane: glide streams (FineStream.ts render path), fine missiles, debug overlay
         m[211] = 4211; // LOCAL_FINE_POS -> dedicated handler
+        m[210] = 4210; // FINE_POS (npc glide)
+        m[215] = 4215; // REMOTE_FINE_POS (other players' glide)
+        m[212] = 4212; // MISSILE_SPAWN (client-flown fine missile)
+        m[213] = 4213; // MISSILE_DETONATE (impact burst / pierce)
+        m[216] = 4216; // debug overlay toggle (::fm 6)
         // m[132] handled above (4132 — the rev-500 163 handler read X first / wrong transform)
         return m;
     })();
