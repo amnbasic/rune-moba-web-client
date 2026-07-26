@@ -21,15 +21,15 @@ export default class ScreenSizeDialog {
     static open: boolean = false;
 
     private static readonly TITLE: string = 'Settings';
-    private static readonly LABELS: string[] = ['Fixed  765 x 503', '1024 x 768', '1280 x 720', '1600 x 900', 'Fullscreen (native)', '3D detail: toggle', 'VSync: toggle', 'FPS counter: toggle', 'Perf overlay: toggle', 'Cancel'];
+    private static readonly LABELS: string[] = ['Fixed  765 x 503', '1024 x 768', '1280 x 720', '1600 x 900', 'Fullscreen (native)', '3D detail: toggle', 'VSync: toggle', 'WASD camera: toggle', 'FPS counter: toggle', 'Perf overlay: toggle', 'Cancel'];
     /**
      * Per-row action: >=0 = screen-mode preset; -1 = cancel (close); toggles (stay
      * open so the re-rendered label shows the new state): -2 = 3D half/full res,
-     * -3 = vsync pacing, -4 = FPS counter, -5 = perf overlay.
+     * -3 = vsync pacing, -4 = FPS counter, -5 = perf overlay, -6 = WASD camera.
      */
-    private static readonly MODES: number[] = [ScreenMode.FIXED, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.FULLSCREEN, -2, -3, -4, -5, -1];
-    private static readonly WS: number[] = [0, 1024, 1280, 1600, 0, 0, 0, 0, 0, 0];
-    private static readonly HS: number[] = [0, 768, 720, 900, 0, 0, 0, 0, 0, 0];
+    private static readonly MODES: number[] = [ScreenMode.FIXED, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.FULLSCREEN, -2, -3, -6, -4, -5, -1];
+    private static readonly WS: number[] = [0, 1024, 1280, 1600, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly HS: number[] = [0, 768, 720, 900, 0, 0, 0, 0, 0, 0, 0];
 
     private static readonly COL_FILL: number = 0x2e2519;
     private static readonly COL_BORDER: number = 0x000000;
@@ -91,6 +91,10 @@ export default class ScreenSizeDialog {
             Client.showPerf = !Client.showPerf;
             return;
         }
+        if (mode === -6) {
+            Client.wasdMode = !Client.wasdMode;
+            return;
+        }
         ScreenSizeDialog.open = false;
         if (mode >= 0) {
             ScreenMode.applyPreset(mode, ScreenSizeDialog.WS[row], ScreenSizeDialog.HS[row]);
@@ -138,6 +142,8 @@ export default class ScreenSizeDialog {
                 label = Client.showFpsCounter ? 'FPS counter: on' : 'FPS counter: off';
             } else if (ScreenSizeDialog.MODES[i] === -5) {
                 label = Client.showPerf ? 'Perf overlay: on' : 'Perf overlay: off';
+            } else if (ScreenSizeDialog.MODES[i] === -6) {
+                label = Client.wasdMode ? 'WASD camera: on' : 'WASD camera: off';
             }
             const lw = font.stringWid(label);
             const baseline = ry + font.maxAscent + (((ScreenSizeDialog.ROW_H - font.maxAscent - font.maxDescent) / 2) | 0);

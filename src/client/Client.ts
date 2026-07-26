@@ -533,6 +533,10 @@ export class Client extends GameShell {
     // ::perf overlay: smoothed per-stage frame timings (ms).
     static showPerf: boolean = false;
     static showFpsCounter: boolean = true;
+    // WASD camera mode (::settings toggle, like the Java client's login button): when
+    // on, W/A/S/D drive the camera and are CONSUMED so they never type into chat
+    // (type via Enter//: as usual); when off they type like vanilla.
+    static wasdMode: boolean = true;
     static perfSceneMs: number = 0;
     static perfPresentMs: number = 0;
     static menuX: number = 0;
@@ -2865,20 +2869,22 @@ export class Client extends GameShell {
             ClientMouseListener.middleLastY = ClientMouseListener.nextMouseY;
         }
 
-        // QoL: WASD aliases the arrow keys for camera control (A=48, D=50, W=33, S=49 in the
-        // client's internal keycodes). Chat typing is unaffected (separate typed-char queue).
+        // WASD aliases the arrow keys for camera control (A=48, D=50, W=33, S=49 in the
+        // client's internal keycodes), gated on the ::settings WASD toggle. While on,
+        // the MOBA key filter consumes the letters so they never type into chat.
+        const wasd: boolean = Client.wasdMode;
         const var0: number = Client.localPlayer!.z + Client.macroCameraZ;
-        if (ClientKeyboardListener.keyHeld[96] || ClientKeyboardListener.keyHeld[48]) {
+        if (ClientKeyboardListener.keyHeld[96] || (wasd && ClientKeyboardListener.keyHeld[48])) {
             Client.orbitCameraYawVelocity += ((-Client.orbitCameraYawVelocity - 24) / 2) | 0;
-        } else if (ClientKeyboardListener.keyHeld[97] || ClientKeyboardListener.keyHeld[50]) {
+        } else if (ClientKeyboardListener.keyHeld[97] || (wasd && ClientKeyboardListener.keyHeld[50])) {
             Client.orbitCameraYawVelocity += ((24 - Client.orbitCameraYawVelocity) / 2) | 0;
         } else {
             Client.orbitCameraYawVelocity = (Client.orbitCameraYawVelocity / 2) | 0;
         }
 
-        if (ClientKeyboardListener.keyHeld[98] || ClientKeyboardListener.keyHeld[33]) {
+        if (ClientKeyboardListener.keyHeld[98] || (wasd && ClientKeyboardListener.keyHeld[33])) {
             Client.orbitCameraPitchVelocity += ((12 - Client.orbitCameraPitchVelocity) / 2) | 0;
-        } else if (ClientKeyboardListener.keyHeld[99] || ClientKeyboardListener.keyHeld[49]) {
+        } else if (ClientKeyboardListener.keyHeld[99] || (wasd && ClientKeyboardListener.keyHeld[49])) {
             Client.orbitCameraPitchVelocity += ((-Client.orbitCameraPitchVelocity - 12) / 2) | 0;
         } else {
             Client.orbitCameraPitchVelocity = (Client.orbitCameraPitchVelocity / 2) | 0;
@@ -8933,6 +8939,30 @@ export class Client extends GameShell {
             Client.mobaSwallowCharB = 32;
             return true;
         }
+        if (Client.wasdMode) {
+            // WASD camera keys: consume so they never type (keyHeld — which drives the
+            // camera — is a separate buffer and is unaffected by eating the queue entry).
+            if (code === 33) {
+                Client.mobaSwallowCharA = 119; // 'w'
+                Client.mobaSwallowCharB = 87; // 'W'
+                return true;
+            }
+            if (code === 48) {
+                Client.mobaSwallowCharA = 97; // 'a'
+                Client.mobaSwallowCharB = 65; // 'A'
+                return true;
+            }
+            if (code === 49) {
+                Client.mobaSwallowCharA = 115; // 's'
+                Client.mobaSwallowCharB = 83; // 'S'
+                return true;
+            }
+            if (code === 50) {
+                Client.mobaSwallowCharA = 100; // 'd'
+                Client.mobaSwallowCharB = 68; // 'D'
+                return true;
+            }
+        }
         if (code === 32) {
             SkillshotOverlay.slotPressed(SkillshotOverlay.SLOT_Q);
             Client.mobaSwallowCharA = 113; // 'q'
@@ -9047,7 +9077,26 @@ export class Client extends GameShell {
                     }
                 } else {
                     SkillshotOverlay.armedAbility = 0;
-                    Client.doAction(mlTop);
+                    // Responsiveness: if this is the walk row and the ground tile is
+                    // already hover-picked THIS frame, move NOW instead of arming the
+                    // click pick (which costs a full render round-trip).
+                    if (Client.menuAction[mlTop] === 10 && World.hoverGroundX !== -1) {
+                        const mlPlayer = Client.localPlayer!;
+                        let mlSuccess: boolean;
+                        if (mlPlayer.fineStreamed) {
+                            mlSuccess = FineStream.sendFineClick(World.hoverGroundX, World.hoverGroundZ);
+                        } else {
+                            mlSuccess = Client.tryMove(0, 0, World.hoverGroundZ, World.hoverGroundX, mlPlayer.routeX[0], 0, 0, 0, true, 0, mlPlayer.routeZ[0]);
+                        }
+                        if (mlSuccess) {
+                            Client.crossX = ClientMouseListener.mouseClickX;
+                            Client.crossCycle = 0;
+                            Client.crossY = ClientMouseListener.mouseClickY;
+                            Client.crossMode = 1;
+                        }
+                    } else {
+                        Client.doAction(mlTop);
+                    }
                 }
                 return;
             }
