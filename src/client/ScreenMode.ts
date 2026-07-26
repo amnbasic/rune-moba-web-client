@@ -324,7 +324,7 @@ export default class ScreenMode {
         }
         if (IfType.openInterface(ScreenMode.PANE_ID)) {
             if (ScreenMode.mode === ScreenMode.FIXED) {
-                ScreenMode.pos(0, 0, 453); // chat buttons row
+                ScreenMode.pos(0, ScreenMode.OFFSCREEN, 453); // chat-mode buttons row (public/private/trade/report) — retired from the MOBA HUD
                 ScreenMode.pos(10, 496, 466); // bottom-right icon strip
                 ScreenMode.pos(27, 516, 160); // tab icon row
                 ScreenMode.pos(44, 0, 338); // viewport/chat divider art
@@ -359,7 +359,7 @@ export default class ScreenMode {
             } else {
                 const dy = h - ScreenMode.FIXED_H;
                 const vdy = h - ScreenMode.FIXED_VP_H;
-                ScreenMode.pos(0, 0, 453 + dy);
+                ScreenMode.pos(0, ScreenMode.OFFSCREEN, 453 + dy); // chat-mode buttons row — retired
                 // The two stock TAB STRIPS are parked off-screen in the MOBA HUD: the
                 // side panel keeps showing the inventory and HudPanelOverlay's button
                 // grid replaces tab switching. Hidden, never unbound — FIXED mode is

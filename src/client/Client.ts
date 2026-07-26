@@ -779,6 +779,18 @@ export class Client extends GameShell {
                 if (Client.dbgGameLoopN % 100 === 0) console.log('[dbg] gameDraw call');
                 this.gameDraw();
                 if (Client.dbgGameLoopN % 100 === 0) console.log('[dbg] gameDraw ok');
+                // WASD chat mode hint — drawn AFTER the whole interface tree so the
+                // chat components can't paint over it (Java WasdCamera reference).
+                if (Client.wasdMode && !Client.mobaTyping && Client.toplevelinterface === 548 && Client.p12 !== null) {
+                    const hcMinX = Pix2D.clipMinX;
+                    const hcMinY = Pix2D.clipMinY;
+                    const hcMaxX = Pix2D.clipMaxX;
+                    const hcMaxY = Pix2D.clipMaxY;
+                    Pix2D.setClipping(0, 0, Pix2D.width, Pix2D.height);
+                    const hintY = (ScreenMode.mode === ScreenMode.FIXED ? 357 : 357 + (GameShell.sHei - 503)) + 114;
+                    Client.p12.drawString('Press Enter to chat...', 24, hintY, 0xffff00, 0);
+                    Pix2D.setClipping(hcMinX, hcMinY, hcMaxX, hcMaxY);
+                }
             } catch (e) {
                 // DEV: a broken 464 game-frame interface makes gameDraw throw; catching it keeps the
                 // render loop (and the 3D scene) alive instead of crashing the tab. Log the first few.
@@ -3713,19 +3725,6 @@ export class Client extends GameShell {
         SkillshotOverlay.render(x, y, width, height);
         AbilityBarOverlay.render(x, y, width, height);
         HudPanelOverlay.render();
-        // WASD chat mode (Java WasdCamera): while letters are game keys, the chatbox
-        // says how to start typing. Drawn with a clip escape — in FIXED mode the chat
-        // area sits OUTSIDE the 3D viewport clip.
-        if (Client.wasdMode && !Client.mobaTyping && Client.toplevelinterface === 548 && Client.p12 !== null) {
-            const hcMinX = Pix2D.clipMinX;
-            const hcMinY = Pix2D.clipMinY;
-            const hcMaxX = Pix2D.clipMaxX;
-            const hcMaxY = Pix2D.clipMaxY;
-            Pix2D.setClipping(0, 0, Pix2D.width, Pix2D.height);
-            const hintY = (ScreenMode.mode === ScreenMode.FIXED ? 357 : 357 + (GameShell.sHei - 503)) + 114;
-            Client.p12.drawString('Press Enter to chat...', 24, hintY, 0xffff00, 0);
-            Pix2D.setClipping(hcMinX, hcMinY, hcMaxX, hcMaxY);
-        }
         FineStream.renderDebug(x, y);
         // Screen-size picker (::fs): modal, drawn last so it sits on top of everything.
         ScreenSizeDialog.render(x, y, width, height);
