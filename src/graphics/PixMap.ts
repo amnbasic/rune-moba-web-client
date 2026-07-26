@@ -55,6 +55,42 @@ export default class PixMap {
         return this.image;
     }
 
+    /** Convert only the rows/cols of a dirty rect — a sub-blit present must not pay
+     *  for a full-frame conversion (that cost scales with WINDOW size, not rect size). */
+    private updateImageDataRect(x: number, y: number, w: number, h: number): ImageData | null {
+        if (!this.image) {
+            return null;
+        }
+        if (x < 0) {
+            w += x;
+            x = 0;
+        }
+        if (y < 0) {
+            h += y;
+            y = 0;
+        }
+        if (x + w > this.width) {
+            w = this.width - x;
+        }
+        if (y + h > this.height) {
+            h = this.height - y;
+        }
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+        const data = this.data;
+        const paint = this.paint;
+        for (let row = y; row < y + h; row++) {
+            let i = row * this.width + x;
+            const end = i + w;
+            for (; i < end; i++) {
+                const pixel = data[i];
+                paint[i] = ((pixel & 0xff0000) >> 16) | (pixel & 0xff00) | ((pixel & 0xff) << 16) | 0xff000000;
+            }
+        }
+        return this.image;
+    }
+
     draw(x: number, y: number): void {
         const image = this.updateImageData();
         if (!image) {
@@ -65,7 +101,7 @@ export default class PixMap {
     }
 
     draw2(height: number, width: number, y: number, x: number): void {
-        const image = this.updateImageData();
+        const image = this.updateImageDataRect(x, y, width, height);
         if (!image || width <= 0 || height <= 0) {
             return;
         }

@@ -770,10 +770,21 @@ export class Client extends GameShell {
 
         if (Client.state === ClientMainState.GAME && Client.componentRectDebug === 0 && !redraw) {
             try {
-                for (let i = 0; i < Client.componentDrawCount; i++) {
-                    if (Client.componentBlitArea[i]) {
-                        GameShell.drawArea.draw2(Client.componentDrawHeight[i], Client.componentDrawWidth[i], Client.componentDrawY[i], Client.componentDrawX[i]);
+                if (ScreenMode.mode !== ScreenMode.FIXED) {
+                    // Resizable/fullscreen: every component is dirty every frame, so the
+                    // per-component loop became a full-frame RGBA-conversion STORM (each
+                    // draw2 converts before its sub-blit). ONE full present instead —
+                    // the exact Java round-3 blit lesson.
+                    GameShell.drawArea.draw(0, 0);
+                    for (let i = 0; i < Client.componentDrawCount; i++) {
                         Client.componentBlitArea[i] = false;
+                    }
+                } else {
+                    for (let i = 0; i < Client.componentDrawCount; i++) {
+                        if (Client.componentBlitArea[i]) {
+                            GameShell.drawArea.draw2(Client.componentDrawHeight[i], Client.componentDrawWidth[i], Client.componentDrawY[i], Client.componentDrawX[i]);
+                            Client.componentBlitArea[i] = false;
+                        }
                     }
                 }
             } catch {}
