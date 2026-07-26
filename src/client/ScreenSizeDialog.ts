@@ -119,8 +119,12 @@ export default class ScreenSizeDialog {
         const panelX = ScreenSizeDialog.panelX;
         const panelY = ScreenSizeDialog.panelY;
 
-        // Dim the viewport behind the panel (modal feel), then the bevelled panel.
-        Pix2D.fillRectTrans(left, top, width, height, 0x000000, 120);
+        // Dim the viewport behind the panel (modal feel). With the GPU renderer the
+        // wash is drawn INTO the GL scene (GlRenderer.dimAlpha) — a 2D wash here
+        // would blend into the transparent hole and black the scene out.
+        if (!GlRenderer.enabled) {
+            Pix2D.fillRectTrans(left, top, width, height, 0x000000, 120);
+        }
         Pix2D.fillRect(panelX, panelY, ScreenSizeDialog.PANEL_W, h, ScreenSizeDialog.COL_FILL);
         Pix2D.drawRect(panelX, panelY, ScreenSizeDialog.PANEL_W, h, ScreenSizeDialog.COL_BORDER);
         Pix2D.drawRect(panelX + 1, panelY + 1, ScreenSizeDialog.PANEL_W - 2, h - 2, ScreenSizeDialog.COL_BEVEL);

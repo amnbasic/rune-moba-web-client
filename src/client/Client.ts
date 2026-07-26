@@ -3636,6 +3636,7 @@ export class Client extends GameShell {
         if (glScene) {
             GlRenderer.resize(GameShell.sWid, GameShell.sHei);
             GlRenderer.beginScene(x, y, width, height);
+            GlRenderer.dimAlpha = ScreenSizeDialog.open ? 120 / 256 : 0;
         }
         Pix3D.focal = Math.max(1, (ScreenMode.sceneFocal / sceneScale) | 0);
         Client.scenePickMinX = Pix3D.minX;
@@ -3712,6 +3713,19 @@ export class Client extends GameShell {
         SkillshotOverlay.render(x, y, width, height);
         AbilityBarOverlay.render(x, y, width, height);
         HudPanelOverlay.render();
+        // WASD chat mode (Java WasdCamera): while letters are game keys, the chatbox
+        // says how to start typing. Drawn with a clip escape — in FIXED mode the chat
+        // area sits OUTSIDE the 3D viewport clip.
+        if (Client.wasdMode && !Client.mobaTyping && Client.toplevelinterface === 548 && Client.p12 !== null) {
+            const hcMinX = Pix2D.clipMinX;
+            const hcMinY = Pix2D.clipMinY;
+            const hcMaxX = Pix2D.clipMaxX;
+            const hcMaxY = Pix2D.clipMaxY;
+            Pix2D.setClipping(0, 0, Pix2D.width, Pix2D.height);
+            const hintY = (ScreenMode.mode === ScreenMode.FIXED ? 357 : 357 + (GameShell.sHei - 503)) + 114;
+            Client.p12.drawString('Press Enter to chat...', 24, hintY, 0xffff00, 0);
+            Pix2D.setClipping(hcMinX, hcMinY, hcMaxX, hcMaxY);
+        }
         FineStream.renderDebug(x, y);
         // Screen-size picker (::fs): modal, drawn last so it sits on top of everything.
         ScreenSizeDialog.render(x, y, width, height);

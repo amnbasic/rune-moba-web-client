@@ -167,6 +167,13 @@ export default class GlRenderer {
         gl.scissor(GlRenderer.vpX, glY, GlRenderer.vpW, GlRenderer.vpH);
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
+        if (GlRenderer.dimAlpha > 0) {
+            // modal dim (::settings): darken the GL scene itself — a 2D-layer wash
+            // would destroy the transparent hole (it has no alpha to blend into)
+            const a = GlRenderer.dimAlpha;
+            GlRenderer.pushTriangle(0, 0, 0, GlRenderer.vpW, 0, 0, 0, GlRenderer.vpH, 0, a);
+            GlRenderer.pushTriangle(GlRenderer.vpW, 0, 0, GlRenderer.vpW, GlRenderer.vpH, 0, 0, GlRenderer.vpH, 0, a);
+        }
         if (GlRenderer.count > 0) {
             gl.uniform2f(GlRenderer.uScale, 2 / GlRenderer.vpW, 2 / GlRenderer.vpH);
             gl.bindBuffer(gl.ARRAY_BUFFER, GlRenderer.vbo);
@@ -174,5 +181,15 @@ export default class GlRenderer {
             gl.drawArrays(gl.TRIANGLES, 0, (GlRenderer.count / 6) | 0);
         }
         gl.disable(gl.SCISSOR_TEST);
+        if (GlRenderer.dbgFrames < 10 && GlRenderer.count > 0) {
+            GlRenderer.dbgFrames++;
+            const v = GlRenderer.verts;
+            console.log('[GL] flush tris=' + ((GlRenderer.count / 18) | 0) + ' vp=' + GlRenderer.vpX + ',' + GlRenderer.vpY + ' ' + GlRenderer.vpW + 'x' + GlRenderer.vpH + ' canvas=' + canvas.width + 'x' + canvas.height + ' err=' + gl.getError() + ' v0=(' + v[0].toFixed(0) + ',' + v[1].toFixed(0) + ' rgb ' + v[2].toFixed(2) + '/' + v[3].toFixed(2) + '/' + v[4].toFixed(2) + ' a' + v[5].toFixed(2) + ')');
+        }
     }
+
+    private static dbgFrames: number = 0;
+
+    /** Full-viewport black dim (0..1) drawn over the scene at flush (modal dialogs). */
+    static dimAlpha: number = 0;
 }

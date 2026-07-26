@@ -75,7 +75,9 @@ export default abstract class GameShell {
 
         GameShell.canvas = canvas;
         GameShell.ctx = GameShell.canvas.getContext('2d', {
-            alpha: false
+            // alpha REQUIRED: the GPU scene renders on #glcanvas UNDERNEATH and shows
+            // through the viewport's transparent hole (PixMap.GL_TRANSPARENT).
+            alpha: true
         }) as CanvasRenderingContext2D;
         GameShell.canvas.width = GameShell.sWid;
         GameShell.canvas.height = GameShell.sHei;
