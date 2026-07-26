@@ -1,5 +1,6 @@
 import AbilityBarOverlay from '#/client/AbilityBarOverlay.js';
 import { Client } from '#/client/Client.js';
+import AbilityBarOverlay from '#/client/AbilityBarOverlay.js';
 import ClientMouseListener from '#/client/ClientMouseListener.js';
 import { ClientProt } from '#/client/ClientProt.js';
 import FineStream from '#/client/FineStream.js';
@@ -218,14 +219,24 @@ export default class SkillshotOverlay {
                 }
             }
         }
-        Client.getOverlayPos(height >> 1, player.getHeight() + 28, player.x, width >> 1, player.z);
-        if (Client.projectX === -1 || Client.projectY === -1) {
-            return;
-        }
         const W = SkillshotOverlay.CAST_BAR_W;
         const H = SkillshotOverlay.CAST_BAR_H;
-        const bx = left + Client.projectX - (W >> 1);
-        const by = top + Client.projectY;
+        let bx: number;
+        let by: number;
+        if (AbilityBarOverlay.barY > -1000) {
+            // Fixed HUD anchor: centred just above the ability bar — the overhead
+            // position collided with the HP/mana bars at some camera angles.
+            bx = AbilityBarOverlay.barX + ((AbilityBarOverlay.barW - W) >> 1);
+            by = AbilityBarOverlay.barY - H - 6;
+        } else {
+            // no bar on screen (kit not latched) — overhead fallback
+            Client.getOverlayPos(height >> 1, player.getHeight() + 28, player.x, width >> 1, player.z);
+            if (Client.projectX === -1 || Client.projectY === -1) {
+                return;
+            }
+            bx = left + Client.projectX - (W >> 1);
+            by = top + Client.projectY;
+        }
         let frac: number;
         let fill: number;
         if (inChannel) {

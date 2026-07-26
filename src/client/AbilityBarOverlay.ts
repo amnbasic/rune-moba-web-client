@@ -69,10 +69,11 @@ export default class AbilityBarOverlay {
     private static readonly KEY_LABELS: string[] = ['Q', 'E', 'R', 'T'];
     private static readonly MENU_CAST: string[] = ['Cast Q', 'Cast E', 'Cast R'];
 
-    /** Bar rect in window coords, stored each render for the hover/click hit-tests. */
-    private static barX: number = -1000;
-    private static barY: number = -1000;
-    private static barW: number = 0;
+    /** Bar rect in window coords, stored each render for the hover/click hit-tests
+     *  (public: the cast/channel bar anchors just above this block). */
+    static barX: number = -1000;
+    static barY: number = -1000;
+    static barW: number = 0;
     private static barH: number = 0;
 
     /** Icon sprite cache per slot (reloaded when the slot's icon varp changes). */
