@@ -788,8 +788,13 @@ export class Client extends GameShell {
                     const hcMaxY = Pix2D.clipMaxY;
                     Pix2D.setClipping(0, 0, Pix2D.width, Pix2D.height);
                     const hintY = (ScreenMode.mode === ScreenMode.FIXED ? 357 : 357 + (GameShell.sHei - 503)) + 94;
-                    // x 110: sits AFTER the "name: *" input prompt on the same line
-                    Client.p12.drawString('Press Enter to chat...', 110, hintY, 0xffff00, 0);
+                    // sits immediately AFTER the "name: *" input prompt (measured, so any
+                    // username length works)
+                    let hintX = 26;
+                    if (Client.localPlayer !== null && Client.localPlayer.name) {
+                        hintX = 12 + Client.p12.stringWid(Client.localPlayer.name.toString() + ': *') + 8;
+                    }
+                    Client.p12.drawString('Press Enter to chat...', hintX, hintY, 0xffff00, 0);
                     Pix2D.setClipping(hcMinX, hcMinY, hcMaxX, hcMaxY);
                 }
             } catch (e) {

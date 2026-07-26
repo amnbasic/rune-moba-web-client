@@ -52,8 +52,6 @@ export default class GlRenderer {
     private static vpW: number = 512;
     private static vpH: number = 334;
 
-    private static dbgFrames: number = 0;
-
     static ready(): boolean {
         if (GlRenderer.gl !== null) {
             return true;
@@ -334,9 +332,5 @@ export default class GlRenderer {
             gl.drawArrays(gl.TRIANGLES, 0, (GlRenderer.count / GlRenderer.VSIZE) | 0);
         }
         gl.disable(gl.SCISSOR_TEST);
-        if (GlRenderer.dbgFrames < 3 && GlRenderer.count > 0) {
-            GlRenderer.dbgFrames++;
-            console.log('[GL] flush tris=' + ((GlRenderer.count / (GlRenderer.VSIZE * 3)) | 0) + ' atlasSlots=' + GlRenderer.atlasNext + ' err=' + gl.getError());
-        }
     }
 }
