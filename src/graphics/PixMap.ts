@@ -1,6 +1,13 @@
 import Pix2D from '#/graphics/Pix2D.js';
 
 export default class PixMap {
+    /**
+     * Transparent-pixel sentinel for the GL scene hole: a value no 24-bit drawing
+     * op can produce (bit 24 set). Converted to alpha 0 at present time so the
+     * WebGL canvas layered below shows through; every real pixel stays opaque.
+     */
+    static readonly GL_TRANSPARENT: number = 0x1000000;
+
     data: Int32Array;
     width: number;
     height: number;
@@ -32,24 +39,10 @@ export default class PixMap {
         const paint = this.paint;
         const len = data.length;
 
-        let i = 0;
-        const unroll = len - (len % 4);
-
-        for (; i < unroll; i += 4) {
-            const p0 = data[i];
-            const p1 = data[i + 1];
-            const p2 = data[i + 2];
-            const p3 = data[i + 3];
-
-            paint[i] = ((p0 & 0xff0000) >> 16) | (p0 & 0xff00) | ((p0 & 0xff) << 16) | 0xff000000;
-            paint[i + 1] = ((p1 & 0xff0000) >> 16) | (p1 & 0xff00) | ((p1 & 0xff) << 16) | 0xff000000;
-            paint[i + 2] = ((p2 & 0xff0000) >> 16) | (p2 & 0xff00) | ((p2 & 0xff) << 16) | 0xff000000;
-            paint[i + 3] = ((p3 & 0xff0000) >> 16) | (p3 & 0xff00) | ((p3 & 0xff) << 16) | 0xff000000;
-        }
-
-        for (; i < len; i++) {
+        const T = PixMap.GL_TRANSPARENT;
+        for (let i = 0; i < len; i++) {
             const pixel = data[i];
-            paint[i] = ((pixel & 0xff0000) >> 16) | (pixel & 0xff00) | ((pixel & 0xff) << 16) | 0xff000000;
+            paint[i] = pixel === T ? 0 : ((pixel & 0xff0000) >> 16) | (pixel & 0xff00) | ((pixel & 0xff) << 16) | 0xff000000;
         }
 
         return this.image;
@@ -80,12 +73,13 @@ export default class PixMap {
         }
         const data = this.data;
         const paint = this.paint;
+        const T = PixMap.GL_TRANSPARENT;
         for (let row = y; row < y + h; row++) {
             let i = row * this.width + x;
             const end = i + w;
             for (; i < end; i++) {
                 const pixel = data[i];
-                paint[i] = ((pixel & 0xff0000) >> 16) | (pixel & 0xff00) | ((pixel & 0xff) << 16) | 0xff000000;
+                paint[i] = pixel === T ? 0 : ((pixel & 0xff0000) >> 16) | (pixel & 0xff00) | ((pixel & 0xff) << 16) | 0xff000000;
             }
         }
         return this.image;

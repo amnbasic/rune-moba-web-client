@@ -77,6 +77,8 @@ import Timer from '#/util/Timer.js';
 
 import Pix2D from '#/graphics/Pix2D.js';
 import Pix3D from '#/dash3d/Pix3D.js';
+import GlRenderer from '#/dash3d/GlRenderer.js';
+import PixMap from '#/graphics/PixMap.js';
 import ModelLit from '#/dash3d/ModelLit.js';
 import ModelUnlit from '#/dash3d/ModelUnlit.js';
 import Pix8 from '#/graphics/Pix8.js';
@@ -3619,7 +3621,10 @@ export class Client extends GameShell {
         // the frame; picking/click coords auto-map through Pix3D.minX/maxX. The scene
         // pass projects with sceneFocal / scale (constant vertical FOV); overlays and
         // all UI draw full-res at 512 after the bracket.
-        const sceneScale: number = ScreenMode.activeScale();
+        // GPU renderer: full-res always (raster cost is the GPU's problem); the 2D
+        // frame keeps a TRANSPARENT hole where the GL canvas below shows through.
+        const glScene: boolean = GlRenderer.enabled && GlRenderer.ready();
+        const sceneScale: number = glScene ? 1 : ScreenMode.activeScale();
         const sceneW: number = (width / sceneScale) | 0;
         const sceneH: number = (height / sceneScale) | 0;
         if (sceneScale !== 1) {
@@ -3628,6 +3633,10 @@ export class Client extends GameShell {
             Pix2D.setClipping(x, y, x + width, y + height);
         }
         Pix3D.setRenderClipping();
+        if (glScene) {
+            GlRenderer.resize(GameShell.sWid, GameShell.sHei);
+            GlRenderer.beginScene(x, y, width, height);
+        }
         Pix3D.focal = Math.max(1, (ScreenMode.sceneFocal / sceneScale) | 0);
         Client.scenePickMinX = Pix3D.minX;
         Client.scenePickMaxX = Pix3D.maxX;
@@ -3655,11 +3664,16 @@ export class Client extends GameShell {
         World.updateHoverPicking(ModelLit.mouseCheck, Client.minusedlevel, ModelLit.mouseX, ModelLit.mouseY);
 
         Client.doAudio();
-        Pix2D.fillRect(Pix2D.clipMinX, Pix2D.clipMinY, Pix2D.clipMaxX - Pix2D.clipMinX, Pix2D.clipMaxY - Pix2D.clipMinY, 0x0);
+        // GL mode: punch the transparent hole (PixMap alpha-0 sentinel) so the GL
+        // scene below shows through; software mode: classic black clear.
+        Pix2D.fillRect(Pix2D.clipMinX, Pix2D.clipMinY, Pix2D.clipMaxX - Pix2D.clipMinX, Pix2D.clipMaxY - Pix2D.clipMinY, glScene ? PixMap.GL_TRANSPARENT : 0x0);
         World.renderAll(Client.camX, Client.camY, Client.camZ, Client.camPitch, Client.camYaw, level, null, null, null, null, null, null, Client.localPlayer!.x >> 7, Client.localPlayer!.z >> 7);
         Client.doAudio();
         World.removeSprites();
         Pix3D.focal = 512;
+        if (glScene) {
+            GlRenderer.flush();
+        }
         if (sceneScale !== 1) {
             // back to the frame buffer, upscale the scene, re-clip to the viewport
             GameShell.drawArea.bind();

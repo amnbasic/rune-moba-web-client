@@ -1,6 +1,7 @@
 import { Client } from '#/client/Client.js';
 import GameShell from '#/client/GameShell.js';
 import IfType from '#/config/IfType.js';
+import GlRenderer from '#/dash3d/GlRenderer.js';
 import Pix2D from '#/graphics/Pix2D.js';
 import PixMap from '#/graphics/PixMap.js';
 import VarCache from '#/var/VarCache.js';
@@ -239,8 +240,10 @@ export default class ScreenMode {
             const sw = window.screen.width;
             const sh = window.screen.height;
             if (document.fullscreenElement === null) {
-                // must run inside the user-gesture window (::fs Enter / dialog click)
-                GameShell.canvas.requestFullscreen().catch((): void => {});
+                // must run inside the user-gesture window (::settings dialog click);
+                // the CONTAINER goes fullscreen so the GL scene canvas comes along
+                const target = document.getElementById('game') ?? GameShell.canvas;
+                target.requestFullscreen().catch((): void => {});
             }
             ScreenMode.applySize(Math.max(ScreenMode.FIXED_W, sw), Math.max(ScreenMode.FIXED_H, sh));
         } else {
@@ -257,7 +260,7 @@ export default class ScreenMode {
         GameShell.canvas.focus();
     }
 
-    /** Resize the client surfaces: canvas + the master PixMap (re-points Pix2D). */
+    /** Resize the client surfaces: both canvases + the master PixMap (re-points Pix2D). */
     private static applySize(w: number, h: number): void {
         if (GameShell.sWid === w && GameShell.sHei === h) {
             return;
@@ -266,6 +269,7 @@ export default class ScreenMode {
         GameShell.sHei = h;
         GameShell.canvas.width = w;
         GameShell.canvas.height = h;
+        GlRenderer.resize(w, h);
         GameShell.drawArea = new PixMap(h, w, GameShell.ctx);
         Client.redrawAllComponents();
     }

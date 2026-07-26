@@ -1,4 +1,5 @@
 import Pix2D from '#/graphics/Pix2D.js';
+import GlRenderer from '#/dash3d/GlRenderer.js';
 import type TextureProvider from '#/dash3d/TextureProvider.js';
 import IntMath from '#/util/IntMath.js';
 
@@ -222,6 +223,11 @@ export default class Pix3D {
     }
 
     static gouraudTriangle(arg0: number, arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number, arg7: number, arg8: number): void {
+        if (GlRenderer.active) {
+            // GPU path: args are (y0,y1,y2, x0,x1,x2, palette c0,c1,c2)
+            GlRenderer.pushTriangle(arg3, arg0, Pix3D.colourTable[arg6 & 0xffff], arg4, arg1, Pix3D.colourTable[arg7 & 0xffff], arg5, arg2, Pix3D.colourTable[arg8 & 0xffff], (256 - Pix3D.trans) / 256);
+            return;
+        }
         const var9 = arg4 - arg3;
         const var10 = arg1 - arg0;
         const var11 = arg5 - arg3;
@@ -769,6 +775,11 @@ export default class Pix3D {
     }
 
     static flatTriangle(arg0: number, arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number): void {
+        if (GlRenderer.active) {
+            // GPU path: args are (y0,y1,y2, x0,x1,x2, raw RGB)
+            GlRenderer.pushTriangle(arg3, arg0, arg6, arg4, arg1, arg6, arg5, arg2, arg6, (256 - Pix3D.trans) / 256);
+            return;
+        }
         let var7: number = 0;
         if (arg1 !== arg0) {
             var7 = (((arg4 - arg3) << 16) / (arg1 - arg0)) | 0;
@@ -1272,6 +1283,13 @@ export default class Pix3D {
         arg17: number,
         arg18: number
     ): void {
+        if (GlRenderer.active) {
+            // Stage A GPU path: textured model faces render via the engine's own
+            // average-colour fallback (the lowmem look); real GPU textures follow.
+            const glAvg = Pix3D.textureManager!.getAverageRgb(arg18);
+            Pix3D.gouraudTriangle(arg0, arg1, arg2, arg3, arg4, arg5, Pix3D.textureLightColour(glAvg, arg6), Pix3D.textureLightColour(glAvg, arg7), Pix3D.textureLightColour(glAvg, arg8));
+            return;
+        }
         const var19 = Pix3D.textureManager!.getTexels(Pix3D.brightness, arg18);
         if (var19 === null || Pix3D.trans > 10) {
             const var20 = Pix3D.textureManager!.getAverageRgb(arg18);
@@ -2240,6 +2258,12 @@ export default class Pix3D {
         arg17: number,
         arg18: number
     ): void {
+        if (GlRenderer.active) {
+            // Stage A GPU path: textured ground via the average-colour fallback.
+            const glAvg = Pix3D.textureManager!.getAverageRgb(arg18);
+            Pix3D.gouraudTriangle(arg0, arg1, arg2, arg3, arg4, arg5, Pix3D.textureLightColour(glAvg, arg6), Pix3D.textureLightColour(glAvg, arg7), Pix3D.textureLightColour(glAvg, arg8));
+            return;
+        }
         const var19 = Pix3D.textureManager!.getTexels(Pix3D.brightness, arg18);
         if (var19 === null) {
             const var20 = Pix3D.textureManager!.getAverageRgb(arg18);

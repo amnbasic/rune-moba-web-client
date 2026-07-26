@@ -31,6 +31,28 @@
                 margin-left: auto;
                 margin-right: auto;
                 display: block;
+                position: relative; /* stacking context for the GL scene canvas below the 2D canvas */
+                width: fit-content;
+            }
+
+            #glcanvas {
+                position: absolute;
+                left: 0;
+                top: 0;
+                z-index: 0;
+            }
+
+            #canvas {
+                position: relative;
+                z-index: 1;
+                background: transparent;
+            }
+
+            /* ::settings fullscreen: the CONTAINER goes fullscreen so both canvases show. */
+            #game:fullscreen {
+                background-color: black;
+                width: 100vw;
+                height: 100vh;
             }
 
             canvas {
@@ -66,6 +88,7 @@
     <body>
         <center>
             <div id="game">
+                <canvas id="glcanvas"></canvas>
                 <canvas id="canvas"> Your browser is not capable of running our web client. </canvas>
             </div>
         </center>
