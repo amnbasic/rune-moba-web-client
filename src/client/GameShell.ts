@@ -148,8 +148,14 @@ export default abstract class GameShell {
         GameShell.updatePos = (GameShell.updatePos + 1) & 0x1f;
 
         GameShell.focus = GameShell.focus_in;
+        const perfT0: number = performance.now();
         await this.mainloop();
+        GameShell.perfLogicMs = GameShell.perfLogicMs * 0.9 + (performance.now() - perfT0) * 0.1;
     }
+
+    /** Smoothed per-stage frame timings (ms) for the ::perf overlay. */
+    static perfLogicMs: number = 0;
+    static perfDrawMs: number = 0;
 
     // com.jagex.game.runetek6.client.GameShell3.mainredrawwrapper
     protected async mainredrawwrapper(): Promise<void> {
@@ -168,7 +174,9 @@ export default abstract class GameShell {
             GameShell.fullredraw = true;
         }
 
+        const perfT0: number = performance.now();
         await this.mainredraw();
+        GameShell.perfDrawMs = GameShell.perfDrawMs * 0.9 + (performance.now() - perfT0) * 0.1;
     }
 
     // com.jagex.game.runetek6.client.GameShell3.shutdown

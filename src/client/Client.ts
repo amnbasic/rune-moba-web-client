@@ -73,6 +73,7 @@ import IntNode from '#/datastruct/IntNode.js';
 import LinkList from '#/datastruct/LinkList.js';
 
 import JavaRandom from '#/util/JavaRandom.js';
+import Timer from '#/util/Timer.js';
 
 import Pix2D from '#/graphics/Pix2D.js';
 import Pix3D from '#/dash3d/Pix3D.js';
@@ -529,6 +530,10 @@ export class Client extends GameShell {
     static scenePickMaxX: number = 512;
     static scenePickMinY: number = 0;
     static scenePickMaxY: number = 334;
+    // ::perf overlay: smoothed per-stage frame timings (ms).
+    static showPerf: boolean = false;
+    static perfSceneMs: number = 0;
+    static perfPresentMs: number = 0;
     static menuX: number = 0;
     static menuY: number = 0;
     static menuWidth: number = 0;
@@ -776,6 +781,7 @@ export class Client extends GameShell {
             Client.messageBox(Text.conlost + '<br>' + Text.attempt_to_reestablish, false);
         }
 
+        const perfPresentT0: number = performance.now();
         if (Client.state === ClientMainState.GAME && Client.componentRectDebug === 0 && !redraw) {
             try {
                 if (ScreenMode.mode !== ScreenMode.FIXED) {
@@ -804,6 +810,7 @@ export class Client extends GameShell {
                 }
             } catch {}
         }
+        Client.perfPresentMs = Client.perfPresentMs * 0.9 + (performance.now() - perfPresentT0) * 0.1;
     }
 
     override mainquit(): void {
@@ -2799,6 +2806,16 @@ export class Client extends GameShell {
             }
         }
 
+        if (arg0.toLowerCase() === '::perf') {
+            Client.showPerf = !Client.showPerf;
+            Client.addChat('perf overlay ' + (Client.showPerf ? 'on' : 'off'), 0, '');
+            return;
+        }
+        if (arg0.toLowerCase() === '::vsync') {
+            Timer.rafAlign = !Timer.rafAlign;
+            Client.addChat('vsync frame pacing ' + (Timer.rafAlign ? 'on (rAF)' : 'off (setTimeout)'), 0, '');
+            return;
+        }
         if (arg0.toLowerCase() === '::fs') {
             // MOBA phase 2: ::fs opens the screen-size picker (ScreenSizeDialog); a
             // preset click applies it via ScreenMode.applyPreset — that click is the
@@ -3527,6 +3544,7 @@ export class Client extends GameShell {
 
     gameDrawMain(width: number, x: number, height: number, y: number): void {
         Client.sceneCycle++;
+        const perfSceneT0: number = performance.now();
 
         Client.addPlayers(true);
         Client.addNpcs(true);
@@ -3645,6 +3663,15 @@ export class Client extends GameShell {
             }
             if (sceneH * sceneScale < height) {
                 Pix2D.fillRect(x, y + sceneH * sceneScale, width, height - sceneH * sceneScale, 0x0);
+            }
+        }
+        Client.perfSceneMs = Client.perfSceneMs * 0.9 + (performance.now() - perfSceneT0) * 0.1;
+        // FPS readout, top-left corner (always on); ::perf adds the per-stage breakdown.
+        if (Client.p12 !== null) {
+            Client.p12.drawString('Fps: ' + GameShell.fps, x + 5, y + 14, 0xffff00, 0);
+            if (Client.showPerf) {
+                Client.p12.drawString('tick ' + GameShell.perfLogicMs.toFixed(1) + '  draw ' + GameShell.perfDrawMs.toFixed(1) + 'ms', x + 5, y + 27, 0xffff00, 0);
+                Client.p12.drawString('scene ' + Client.perfSceneMs.toFixed(1) + '  blit ' + Client.perfPresentMs.toFixed(1) + 'ms  3d 1/' + ScreenMode.activeScale() + (Timer.rafAlign ? '  vsync' : ''), x + 5, y + 40, 0xffff00, 0);
             }
         }
         Client.entityOverlays(x, y, height, width);
