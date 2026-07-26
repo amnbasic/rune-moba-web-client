@@ -91,8 +91,12 @@ export default class AbilityBarOverlay {
         return VarCache.var[id];
     }
 
-    /** Estimated current map_clock: the last %moba_clock anchor + elapsed wall-clock ticks. */
-    private static estimatedClock(): number {
+    /**
+     * Estimated current map_clock: the last %moba_clock anchor + elapsed wall-clock
+     * ticks. PUBLIC: SkillshotOverlay's predicted cast bar gates on the same
+     * cooldown estimate this bar renders (one predictor, not two).
+     */
+    static estimatedClock(): number {
         const anchor = AbilityBarOverlay.varp(AbilityBarOverlay.CLOCK_VARP);
         const now = Date.now();
         if (anchor !== AbilityBarOverlay.clockBase) {
@@ -102,8 +106,8 @@ export default class AbilityBarOverlay {
         return AbilityBarOverlay.clockBase + (((now - AbilityBarOverlay.clockBaseMs) / 600) | 0);
     }
 
-    /** Remaining cooldown ticks for a kit slot (0-2), 0 = ready. */
-    private static cooldownLeft(slot: number, estClock: number): number {
+    /** Remaining cooldown ticks for a kit slot (0-2), 0 = ready. PUBLIC: see estimatedClock. */
+    static cooldownLeft(slot: number, estClock: number): number {
         const left = AbilityBarOverlay.varp(AbilityBarOverlay.CD_VARP[slot]) - estClock;
         return left > 0 ? left : 0;
     }
@@ -152,10 +156,27 @@ export default class AbilityBarOverlay {
     // =====================================================================
     // Rendering (gameDrawMain overlay pass: viewport left/top/width/height).
     // =====================================================================
+    /** Latched champ state: the client WIPES temp varps on every region change, so
+     *  reading %champ_class live made the bar vanish mid-game — latch until logout. */
+    private static champLatch: boolean = false;
+    private static readonly latchedIcon: number[] = [0, 0, 0];
+
+    static resetForLogout(): void {
+        AbilityBarOverlay.champLatch = false;
+        AbilityBarOverlay.latchedIcon[0] = 0;
+        AbilityBarOverlay.latchedIcon[1] = 0;
+        AbilityBarOverlay.latchedIcon[2] = 0;
+        AbilityBarOverlay.barX = -1000;
+        AbilityBarOverlay.barY = -1000;
+    }
+
     static render(left: number, top: number, width: number, height: number): void {
-        // No champion picked (%champ_class 1292 unset) = no ability bar at all —
+        // No champion picked (%champ_class 1292 never seen) = no ability bar at all —
         // the reserved mana varps can hold garbage until ::champ stamps the kit.
-        if (VarCache.var[1292] === 0) {
+        if (VarCache.var[1292] !== 0) {
+            AbilityBarOverlay.champLatch = true;
+        }
+        if (!AbilityBarOverlay.champLatch) {
             AbilityBarOverlay.barX = -1000;
             AbilityBarOverlay.barY = -1000;
             return;
@@ -180,7 +201,15 @@ export default class AbilityBarOverlay {
         for (let slot = 0; slot < AbilityBarOverlay.SLOT_COUNT; slot++) {
             const x = AbilityBarOverlay.barX + slot * (SLOT + AbilityBarOverlay.GAP);
             const kitSlot = slot < 3;
-            const icon = kitSlot ? AbilityBarOverlay.varp(AbilityBarOverlay.ICON_VARP[slot]) : 0;
+            let icon = kitSlot ? AbilityBarOverlay.varp(AbilityBarOverlay.ICON_VARP[slot]) : 0;
+            if (kitSlot) {
+                // region-change varp wipe: fall back to the last stamped icon
+                if (icon !== 0) {
+                    AbilityBarOverlay.latchedIcon[slot] = icon;
+                } else {
+                    icon = AbilityBarOverlay.latchedIcon[slot];
+                }
+            }
             const empty = icon === 0;
 
             // Box: 1px black outer, bevel (light top/left, dark bottom/right), stone fill.

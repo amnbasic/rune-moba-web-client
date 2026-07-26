@@ -2482,6 +2482,8 @@ export class Client extends GameShell {
         }
         XpDropOverlay.resetForLogout();
         SkillshotOverlay.armedAbility = 0;
+        SkillshotOverlay.resetKit();
+        AbilityBarOverlay.resetForLogout();
         Client.mobaTyping = false;
         Client.clientpalette = LocType.clientpalette = NpcType.clientpalette = ObjType.clientpalette = new Int16Array(256);
         Client.sendCamera = true;
@@ -3731,6 +3733,9 @@ export class Client extends GameShell {
         // ability bar, then the fine-plane debug labels on top.
         XpDropOverlay.render(x, y, width);
         SkillshotOverlay.render(x, y, width, height);
+        // Overhead cast bar (cast paradigm): floats above the local champion during a
+        // windup/channel — predicted at fire-click from the per-slot cast varps.
+        SkillshotOverlay.renderCastBar(x, y, width, height);
         AbilityBarOverlay.render(x, y, width, height);
         HudPanelOverlay.render();
         FineStream.renderDebug(x, y);
@@ -8616,6 +8621,7 @@ export class Client extends GameShell {
                     arg1.chatTimer = 150;
                     arg1.chatColour = var13 >> 8;
                     arg1.chatEffect = var13 & 0xff;
+                    console.log('[chatdbg] mask chat "' + var23 + '" set for ' + arg1.name + ' (self=' + (arg1 === Client.localPlayer) + ')');
 
                     if (var15 === 2) {
                         Client.addChat(var23, var22, '<img=1>' + arg1.name, var14 ? 17 : 1, null);

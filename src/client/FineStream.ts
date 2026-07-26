@@ -52,6 +52,16 @@ export default class FineStream {
     static viewportW: number = 512;
     static viewportH: number = 334;
 
+    /**
+     * CAST FACING HOLD (wall-clock ms): while Date.now() < this, interpolate() must
+     * not overwrite the LOCAL player's dstYaw with glide velocity-facing — the yaw
+     * was snapped toward the cast aim by SkillshotOverlay at fire-click (League:
+     * the champion instantly faces the cast direction). Lives here rather than on
+     * SkillshotOverlay so the guard needs no new import edge (SkillshotOverlay
+     * already imports FineStream to stamp it).
+     */
+    static castYawHoldUntilMs: number = 0;
+
     static onFinePos(index: number, absFineX: number, absFineZ: number): void {
         if (index < 0 || index >= Client.npc.length) {
             return;
@@ -165,8 +175,16 @@ export default class FineStream {
         const dz = entity.fineStreamToZ - entity.fineStreamFromZ;
         if (dx !== 0 || dz !== 0) {
             // (self - target) argument order, matching the face-entity yaw math
-            // (facing persists while standing — only movement updates it)
-            entity.dstYaw = ((325.949 * Math.atan2(-dx, -dz)) | 0) & 0x7ff;
+            // (facing persists while standing — only movement updates it).
+            // CAST FACING HOLD: while the local champion is inside a cast windup
+            // (SkillshotOverlay snapped yaw toward the aim at fire-click), the
+            // velocity-yaw must not reclaim it — the glide's last segment would
+            // whip the champion back to its walk direction for the first sub-tick
+            // fraction before the server lock settles. Position lerp + gait are
+            // untouched (the champion genuinely glides that fraction).
+            if (!(entity === Client.localPlayer && Date.now() < FineStream.castYawHoldUntilMs)) {
+                entity.dstYaw = ((325.949 * Math.atan2(-dx, -dz)) | 0) & 0x7ff;
+            }
         }
         // moving = the segment has displacement AND is still fresh. The recency gate is
         // load-bearing: a settle/final packet can capture its 'from' mid-lerp (client

@@ -1,3 +1,4 @@
+import AbilityBarOverlay from '#/client/AbilityBarOverlay.js';
 import { Client } from '#/client/Client.js';
 import ClientMouseListener from '#/client/ClientMouseListener.js';
 import { ClientProt } from '#/client/ClientProt.js';
@@ -34,6 +35,10 @@ export default class SkillshotOverlay {
 
     static readonly SHAPE_VARP_BASE: number = 1300; // + slot -> 1301..1303
     static readonly RANGE_VARP_BASE: number = 1303; // + slot -> 1304..1306
+    static readonly CAST_VARP_BASE: number = 1310; // + slot -> 1311..1313 (cast_time, ticks)
+    static readonly CHAN_VARP_BASE: number = 1313; // + slot -> 1314..1316 (channel_time, ticks)
+    /** %moba_cast_until (varp 1317): server's cast/channel completion tick; 0 = idle/interrupted. */
+    static readonly CAST_UNTIL_VARP: number = 1317;
 
     /** Fallback range ring (tiles) if a slot's range varp is unstamped (0). */
     static readonly DEFAULT_RANGE: number = 7;
@@ -58,9 +63,204 @@ export default class SkillshotOverlay {
     /** Currently-armed key SLOT (SLOT_Q/W/E), or 0 if none. */
     static armedAbility: number = 0;
 
+    // =====================================================================
+    // PREDICTED CAST STATE (the overhead cast bar + instant facing). Started at
+    // fire-click from the per-slot cast/channel varps — a server round trip can
+    // never beat a locally-known 600ms duration. The server stays authoritative:
+    // %moba_cast_until (varp 1317) zeroing early kills the bar (CC interrupt /
+    // actual launch), own movement during the channel phase kills it (mirrors
+    // the server's weak-queue wipe), death clears it. One active cast max.
+    // =====================================================================
+    /** Wall-clock ms bounds of the predicted cast: 0 = no active bar. */
+    private static castStartMs: number = 0;
+    private static castFillEndMs: number = 0; // end of the FILL phase (cast time)
+    private static castEndMs: number = 0; // end of the DEPLETE phase (channel); == fill end if none
+    /** True once varp 1317 has been seen carrying THIS cast's completion tick (arms the kill-signal). */
+    private static castSawUntil: boolean = false;
+    /** estimatedClock() at bar start — a 1317 value must exceed this to belong to this cast. */
+    private static castBaseClock: number = 0;
+    /** Local player's fine position at channel-phase entry (movement-cancel anchor); -1 = unset. */
+    private static castAnchorX: number = -1;
+    private static castAnchorZ: number = -1;
+
+    /** Bar geometry/colours (the overhead HP bar's 30x5 look, slightly wider). */
+    private static readonly CAST_BAR_W: number = 34;
+    private static readonly CAST_BAR_H: number = 5;
+    private static readonly CAST_FILL: number = 0xffcc33; // windup fills yellow
+    private static readonly CAST_CHAN_FILL: number = 0xff3300; // channel depletes red
+    private static readonly CAST_MISS: number = 0x1a140a;
+    /** Facing-hold floor for instant casts (yaw snap must survive one glide segment). */
+    private static readonly YAW_HOLD_MIN_MS: number = 400;
+
     /** Toggle-arm a slot; pressing the same key again disarms (cancel). */
     static toggleArm(ability: number): void {
         SkillshotOverlay.armedAbility = SkillshotOverlay.armedAbility === ability ? 0 : ability;
+    }
+
+    /**
+     * Fire-click feedback: instantly SNAP the local champion's yaw toward the
+     * fine aim point (League: you face the cast direction the moment you cast —
+     * the server's facesquare arrives a sync tick later and agrees) + start the
+     * predicted cast bar. Gated on the predicted cooldown (an on-cd press is
+     * rejected server-side — no false turn, no false bar) and, for the
+     * ground-AoE, on the range ring (out-of-range W walks first; the commit
+     * tick is unknowable client-side, so no bar — accepted v1 limitation).
+     * aimFineX/Z = -1 skips facing (aimless self cast).
+     */
+    private static applyCastFeedback(slot: number, aimFineX: number, aimFineZ: number): void {
+        const player = Client.localPlayer;
+        if (player === null) {
+            return;
+        }
+        // cast_time N = N ticks of server lock (the RS2 side runs p_delay(N-1)).
+        const castTicks = SkillshotOverlay.castTimeOf(slot);
+        const chanTicks = SkillshotOverlay.chanTimeOf(slot);
+        const castMs = castTicks * 600;
+        const chanMs = chanTicks * 600;
+        const shape = SkillshotOverlay.shapeOf(slot);
+        let inRange = true;
+        if (aimFineX >= 0) {
+            const dx = aimFineX - player.x;
+            const dz = aimFineZ - player.z;
+            if (shape === SkillshotOverlay.SHAPE_CIRCLE || shape === SkillshotOverlay.SHAPE_UNIT) {
+                const r = SkillshotOverlay.rangeOf(slot) << 7;
+                inRange = dx * dx + dz * dz <= r * r;
+            }
+            // Facing is UNGATED by cooldown: a wrongly-suppressed turn was the original
+            // complaint, and a brief turn on a server-rejected press is harmless.
+            if (inRange && (dx !== 0 || dz !== 0)) {
+                const yaw = ((325.949 * Math.atan2(-dx, -dz)) | 0) & 0x7ff;
+                player.dstYaw = yaw;
+                player.yaw = yaw;
+                FineStream.castYawHoldUntilMs = Date.now() + Math.max(castMs + chanMs, SkillshotOverlay.YAW_HOLD_MIN_MS);
+            }
+        }
+        // Bar: only when the commit is predictable (in range, known windup). The
+        // UNIT shape's engine route (auto-walk) is never predictable — no bar
+        // (its kit rows carry cast_time 0 until the v2 unit cast time lands).
+        if (castTicks + chanTicks === 0 || !inRange || shape === SkillshotOverlay.SHAPE_UNIT) {
+            return;
+        }
+        // Cooldown gate with 1 tick of tolerance: estimatedClock extrapolates wall-clock
+        // between %moba_clock anchors and drifts up to a tick, which suppressed REAL bars
+        // ("the bar isn't always showing up", user 2026-07-26). A boundary press the server
+        // does reject now shows a 600ms bar that self-expires — the better failure.
+        if (AbilityBarOverlay.cooldownLeft(slot - 1, AbilityBarOverlay.estimatedClock()) >= 2) {
+            return;
+        }
+        const now = Date.now();
+        SkillshotOverlay.castStartMs = now;
+        SkillshotOverlay.castFillEndMs = now + castMs;
+        SkillshotOverlay.castEndMs = now + castMs + chanMs;
+        SkillshotOverlay.castSawUntil = false;
+        // Clock stamp for the varp-1317 kill-signal: only a completion tick in the FUTURE
+        // of this press belongs to THIS cast — %moba_cast_until is one global varp, and a
+        // PREVIOUS cast's zero arriving late must not kill this bar.
+        SkillshotOverlay.castBaseClock = AbilityBarOverlay.estimatedClock();
+        SkillshotOverlay.castAnchorX = -1;
+        SkillshotOverlay.castAnchorZ = -1;
+    }
+
+    private static clearCastBar(): void {
+        SkillshotOverlay.castStartMs = 0;
+        SkillshotOverlay.castFillEndMs = 0;
+        SkillshotOverlay.castEndMs = 0;
+        SkillshotOverlay.castSawUntil = false;
+        SkillshotOverlay.castAnchorX = -1;
+        SkillshotOverlay.castAnchorZ = -1;
+    }
+
+    /**
+     * Overhead cast bar (League channel-bar style): floats just above the local
+     * champion's head (above the overhead HP bar line), FILLS yellow over the
+     * cast time, then DEPLETES red over the channel. Drawn from the gameDrawMain
+     * MOBA overlay pass. Kill rules: predicted end reached; varp 1317 zeroed
+     * after being seen non-zero (server launch OR CC interrupt — both end the
+     * cast); own movement during the channel phase (the server channel died to
+     * the weak-queue wipe); death.
+     */
+    static renderCastBar(left: number, top: number, width: number, height: number): void {
+        if (SkillshotOverlay.castEndMs === 0) {
+            return;
+        }
+        const player = Client.localPlayer;
+        const now = Date.now();
+        if (player === null || now >= SkillshotOverlay.castEndMs || Client.statEffectiveLevel[3] === 0) {
+            SkillshotOverlay.clearCastBar();
+            return;
+        }
+        // Server kill-signal: 1317 goes non-zero at commit (+1 sync tick), back to 0
+        // at launch or interrupt. Only trust the zero once THIS cast's non-zero was
+        // seen — the value must be a completion tick beyond the press-time clock, or
+        // it's a stale value from a previous cast whose zero would kill this bar.
+        const until = VarCache.var[SkillshotOverlay.CAST_UNTIL_VARP];
+        if (until > SkillshotOverlay.castBaseClock) {
+            SkillshotOverlay.castSawUntil = true;
+        } else if (until === 0 && SkillshotOverlay.castSawUntil) {
+            SkillshotOverlay.clearCastBar();
+            return;
+        }
+        const inChannel = now >= SkillshotOverlay.castFillEndMs;
+        if (inChannel) {
+            // Movement-cancel anchor: capture the fine position entering the channel;
+            // any real displacement after that means the player moved (right-click,
+            // fine click or WASD) and the server's weak channel queue is gone.
+            if (SkillshotOverlay.castAnchorX < 0) {
+                SkillshotOverlay.castAnchorX = player.x;
+                SkillshotOverlay.castAnchorZ = player.z;
+            } else {
+                const mdx = player.x - SkillshotOverlay.castAnchorX;
+                const mdz = player.z - SkillshotOverlay.castAnchorZ;
+                if (mdx * mdx + mdz * mdz > 64) {
+                    // > 8 fine units (~1/16 tile): real movement, not rounding jitter
+                    SkillshotOverlay.clearCastBar();
+                    return;
+                }
+            }
+        }
+        Client.getOverlayPos(height >> 1, player.getHeight() + 28, player.x, width >> 1, player.z);
+        if (Client.projectX === -1 || Client.projectY === -1) {
+            return;
+        }
+        const W = SkillshotOverlay.CAST_BAR_W;
+        const H = SkillshotOverlay.CAST_BAR_H;
+        const bx = left + Client.projectX - (W >> 1);
+        const by = top + Client.projectY;
+        let frac: number;
+        let fill: number;
+        if (inChannel) {
+            frac = 1 - (now - SkillshotOverlay.castFillEndMs) / (SkillshotOverlay.castEndMs - SkillshotOverlay.castFillEndMs);
+            fill = SkillshotOverlay.CAST_CHAN_FILL;
+        } else {
+            frac = (now - SkillshotOverlay.castStartMs) / (SkillshotOverlay.castFillEndMs - SkillshotOverlay.castStartMs);
+            fill = SkillshotOverlay.CAST_FILL;
+        }
+        let fillW = (W * frac) | 0;
+        if (fillW < 0) {
+            fillW = 0;
+        }
+        if (fillW > W) {
+            fillW = W;
+        }
+        Pix2D.drawRect(bx - 1, by - 1, W + 2, H + 2, 0x000000);
+        if (fillW > 0) {
+            Pix2D.fillRect(bx, by, fillW, H, fill);
+        }
+        if (fillW < W) {
+            Pix2D.fillRect(bx + fillW, by, W - fillW, H, SkillshotOverlay.CAST_MISS);
+        }
+    }
+
+    /** Kit latches: temp varps wipe on region change; a stamped kit writes shape+
+     *  range+icon together, so validity is keyed on the slot's icon varp. */
+    private static readonly latchedShape: number[] = [-1, -1, -1];
+    private static readonly latchedRange: number[] = [0, 0, 0];
+
+    static resetKit(): void {
+        for (let i = 0; i < 3; i++) {
+            SkillshotOverlay.latchedShape[i] = -1;
+            SkillshotOverlay.latchedRange[i] = 0;
+        }
     }
 
     /** The kit ability SHAPE on this slot (^moba_shape_*), or -1 if no ability. */
@@ -68,7 +268,11 @@ export default class SkillshotOverlay {
         if (slot < SkillshotOverlay.SLOT_Q || slot > SkillshotOverlay.SLOT_E) {
             return -1;
         }
-        return VarCache.var[SkillshotOverlay.SHAPE_VARP_BASE + slot];
+        if (VarCache.var[1295 + slot] !== 0) {
+            // icon varp stamped -> the shape varp is live; latch it
+            SkillshotOverlay.latchedShape[slot - 1] = VarCache.var[SkillshotOverlay.SHAPE_VARP_BASE + slot];
+        }
+        return SkillshotOverlay.latchedShape[slot - 1];
     }
 
     /** The kit ability RANGE (tiles) on this slot; DEFAULT_RANGE if unstamped. */
@@ -76,8 +280,29 @@ export default class SkillshotOverlay {
         if (slot < SkillshotOverlay.SLOT_Q || slot > SkillshotOverlay.SLOT_E) {
             return SkillshotOverlay.DEFAULT_RANGE;
         }
-        const r = VarCache.var[SkillshotOverlay.RANGE_VARP_BASE + slot];
+        if (VarCache.var[1295 + slot] !== 0) {
+            SkillshotOverlay.latchedRange[slot - 1] = VarCache.var[SkillshotOverlay.RANGE_VARP_BASE + slot];
+        }
+        const r = SkillshotOverlay.latchedRange[slot - 1];
         return r > 0 ? r : SkillshotOverlay.DEFAULT_RANGE;
+    }
+
+    /** The kit ability CAST TIME (ticks) on this slot; 0 = instant. */
+    static castTimeOf(slot: number): number {
+        if (slot < SkillshotOverlay.SLOT_Q || slot > SkillshotOverlay.SLOT_E) {
+            return 0;
+        }
+        const t = VarCache.var[SkillshotOverlay.CAST_VARP_BASE + slot];
+        return t > 0 ? t : 0;
+    }
+
+    /** The kit ability CHANNEL TIME (ticks) on this slot; 0 = none. */
+    static chanTimeOf(slot: number): number {
+        if (slot < SkillshotOverlay.SLOT_Q || slot > SkillshotOverlay.SLOT_E) {
+            return 0;
+        }
+        const t = VarCache.var[SkillshotOverlay.CHAN_VARP_BASE + slot];
+        return t > 0 ? t : 0;
     }
 
     /** True if the current champion's kit has an ability on this slot. */
@@ -133,6 +358,7 @@ export default class SkillshotOverlay {
         Client.out.p1(64);
         Client.out.p1(64);
         SkillshotOverlay.armedAbility = 0; // an instant cast also cancels any armed aim
+        SkillshotOverlay.applyCastFeedback(slot, -1, -1); // aimless: bar only (if windup'd), no facing
     }
 
     /**
@@ -154,6 +380,8 @@ export default class SkillshotOverlay {
         Client.out.p1(sub >> 8);
         Client.out.p1(sub & 0xff);
         SkillshotOverlay.armedAbility = 0;
+        // Instant facing + predicted cast bar toward the EXACT fine aim the packet carries.
+        SkillshotOverlay.applyCastFeedback(slot, (tileX << 7) + (sub >> 8), (tileZ << 7) + (sub & 0xff));
     }
 
     /**
@@ -172,10 +400,12 @@ export default class SkillshotOverlay {
         }
         let absX: number;
         let absY: number;
+        let target: ClientEntity | null;
         const npcIdx = SkillshotOverlay.hoveredNpcIndex();
         if (npcIdx !== -1) {
             absX = npcIdx;
             absY = 0xffff;
+            target = Client.npc[npcIdx];
         } else {
             const playerIdx = SkillshotOverlay.hoveredPlayerIndex();
             if (playerIdx === -1) {
@@ -183,6 +413,7 @@ export default class SkillshotOverlay {
             }
             absX = playerIdx;
             absY = 0xfffe;
+            target = Client.players[playerIdx];
         }
         Client.out.p1Enc(ClientProt.SKILLSHOT_CAST);
         Client.out.p1(slot);
@@ -192,6 +423,11 @@ export default class SkillshotOverlay {
         Client.out.p1(64);
         Client.out.p1(64);
         SkillshotOverlay.armedAbility = 0;
+        // Face the clicked unit instantly (the engine route auto-faces server-side, a sync tick
+        // later). No bar: the engine may auto-walk first, so the commit tick is unpredictable.
+        if (target !== null) {
+            SkillshotOverlay.applyCastFeedback(slot, target.x, target.z);
+        }
     }
 
     /** Per-frame draw from the gameDrawMain overlay pass (viewport rect). */
