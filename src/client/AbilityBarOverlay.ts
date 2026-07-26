@@ -46,7 +46,7 @@ export default class AbilityBarOverlay {
     /** HP + mana bars stacked above the slot row (League layout). */
     private static readonly BAR_H: number = 13;
     private static readonly BAR_GAP: number = 1;
-    private static readonly BARS_TO_SLOTS: number = 3;
+    private static readonly BARS_TO_SLOTS: number = 8;
     private static readonly BARS_BLOCK: number = AbilityBarOverlay.BAR_H * 2 + AbilityBarOverlay.BAR_GAP + AbilityBarOverlay.BARS_TO_SLOTS;
     private static readonly HP_SKILL: number = 3;
     private static readonly MANA_VARP: number = 1307;
