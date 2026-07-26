@@ -160,6 +160,11 @@ export default class GlRenderer {
         }
     }
 
+    // ANIMATED textures (firecape lava etc): their texels scroll CPU-side via
+    // TextureManager.runAnims — re-upload those slots every frame, and keep
+    // marking needsAnimation (the 2-arg getTexels) so runAnims keeps scrolling.
+    private static animatedIds: number[] = [];
+
     /** Arm collection for this scene pass (viewport rect in frame-canvas coords). */
     static beginScene(x: number, y: number, w: number, h: number): void {
         GlRenderer.vpX = x;
@@ -168,6 +173,33 @@ export default class GlRenderer {
         GlRenderer.vpH = h;
         GlRenderer.count = 0;
         GlRenderer.active = true;
+        for (let i = 0; i < GlRenderer.animatedIds.length; i++) {
+            GlRenderer.uploadSlot(GlRenderer.animatedIds[i]);
+        }
+    }
+
+    /** (Re)upload a texture's current texels into its atlas slot. */
+    private static uploadSlot(textureId: number): void {
+        const slot = GlRenderer.atlasSlot[textureId];
+        if (slot < 0) {
+            return;
+        }
+        const texels = Pix3D.textureManager!.getTexels(Pix3D.brightness, textureId);
+        if (texels === null) {
+            return;
+        }
+        const gl = GlRenderer.gl!;
+        const opaque = Pix3D.textureManager!.isOpaque(textureId);
+        const up = GlRenderer.atlasUpload;
+        for (let i = 0; i < 128 * 128; i++) {
+            const t = texels[i];
+            up[i * 4] = (t >> 16) & 0xff;
+            up[i * 4 + 1] = (t >> 8) & 0xff;
+            up[i * 4 + 2] = t & 0xff;
+            up[i * 4 + 3] = t === 0 && !opaque ? 0 : 255;
+        }
+        gl.bindTexture(gl.TEXTURE_2D, GlRenderer.atlasTex);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, (slot & 7) * 128, (slot >> 3) * 128, 128, 128, gl.RGBA, gl.UNSIGNED_BYTE, up);
     }
 
     private static grow(): void {
@@ -266,6 +298,11 @@ export default class GlRenderer {
         gl.bindTexture(gl.TEXTURE_2D, GlRenderer.atlasTex);
         gl.texSubImage2D(gl.TEXTURE_2D, 0, (slot & 7) * 128, (slot >> 3) * 128, 128, 128, gl.RGBA, gl.UNSIGNED_BYTE, up);
         GlRenderer.atlasSlot[textureId] = slot;
+        // scrolling textures (firecape lava) need per-frame re-upload
+        const tex = (Pix3D.textureManager as unknown as { loadTexture?: (id: number) => { scrollXSpeed: number; scrollYSpeed: number } | null }).loadTexture?.(textureId);
+        if (tex && (tex.scrollXSpeed !== 0 || tex.scrollYSpeed !== 0)) {
+            GlRenderer.animatedIds.push(textureId);
+        }
         return slot;
     }
 
