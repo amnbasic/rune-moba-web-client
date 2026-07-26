@@ -1,6 +1,5 @@
 import AbilityBarOverlay from '#/client/AbilityBarOverlay.js';
 import { Client } from '#/client/Client.js';
-import AbilityBarOverlay from '#/client/AbilityBarOverlay.js';
 import ClientMouseListener from '#/client/ClientMouseListener.js';
 import { ClientProt } from '#/client/ClientProt.js';
 import FineStream from '#/client/FineStream.js';
