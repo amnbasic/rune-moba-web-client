@@ -10,6 +10,7 @@ import XpDropOverlay from '#/client/XpDropOverlay.js';
 import ScreenMode from '#/client/ScreenMode.js';
 import ScreenSizeDialog from '#/client/ScreenSizeDialog.js';
 import HudPanelOverlay from '#/client/HudPanelOverlay.js';
+import MobaCamera from '#/client/MobaCamera.js';
 import ClanChannelUser from '#/client/ClanChannelUser.js';
 import ClientScript from '#/client/ClientScript.js';
 import ClientDynamicProvider from '#/client/ClientDynamicProvider.js';
@@ -521,6 +522,13 @@ export class Client extends GameShell {
     // by minimenuBuildSceneActions this frame (walk-here / entity ops). 0/0 = none.
     static sceneRowStart: number = 0;
     static sceneRowEnd: number = 0;
+    // Scene-pass pick bounds captured at raster time — with the half-res scratch
+    // bound, live Pix3D.minX/maxX would be the WRONG (full-res) space by the time
+    // the menu build maps the walk-row pick coords.
+    static scenePickMinX: number = 0;
+    static scenePickMaxX: number = 512;
+    static scenePickMinY: number = 0;
+    static scenePickMaxY: number = 334;
     static menuX: number = 0;
     static menuY: number = 0;
     static menuWidth: number = 0;
@@ -2858,10 +2866,15 @@ export class Client extends GameShell {
             Client.orbitCameraPitchVelocity = (Client.orbitCameraPitchVelocity / 2) | 0;
         }
 
-        const var1: number = Client.localPlayer!.x + Client.macroCameraX;
-        if (Client.orbitCameraX - var1 < -500 || Client.orbitCameraX - var1 > 500 || Client.orbitCameraZ - var0 < -500 || Client.orbitCameraZ - var0 > 500) {
+        // MOBA free camera (SPACE lock toggle + League edge-pan): when unlocked the
+        // focus target is the free anchor instead of the champion; the stock >500
+        // snap below makes re-locking jump-cut straight back to the champion.
+        MobaCamera.tick();
+        const var1: number = MobaCamera.targetEast(Client.localPlayer!.x + Client.macroCameraX);
+        const mcNorth: number = MobaCamera.targetNorth(var0);
+        if (Client.orbitCameraX - var1 < -500 || Client.orbitCameraX - var1 > 500 || Client.orbitCameraZ - mcNorth < -500 || Client.orbitCameraZ - mcNorth > 500) {
             Client.orbitCameraX = var1;
-            Client.orbitCameraZ = var0;
+            Client.orbitCameraZ = mcNorth;
         }
 
         if (var1 !== Client.orbitCameraX) {
@@ -2870,8 +2883,8 @@ export class Client extends GameShell {
 
         Client.orbitCameraYaw += (Client.orbitCameraYawVelocity / 2) | 0;
         Client.orbitCameraPitch += (Client.orbitCameraPitchVelocity / 2) | 0;
-        if (Client.orbitCameraZ !== var0) {
-            Client.orbitCameraZ += ((var0 - Client.orbitCameraZ) / 16) | 0;
+        if (Client.orbitCameraZ !== mcNorth) {
+            Client.orbitCameraZ += ((mcNorth - Client.orbitCameraZ) / 16) | 0;
         }
         Client.clampCameraAngle();
     }
@@ -3576,8 +3589,25 @@ export class Client extends GameShell {
             }
         }
 
-        Pix2D.setClipping(x, y, x + width, y + height);
+        // MOBA half-res render: in non-FIXED modes the scene rasters into a scaled-down
+        // scratch buffer (a software raster's cost is pixel count) and 2x-upscales into
+        // the frame; picking/click coords auto-map through Pix3D.minX/maxX. The scene
+        // pass projects with sceneFocal / scale (constant vertical FOV); overlays and
+        // all UI draw full-res at 512 after the bracket.
+        const sceneScale: number = ScreenMode.activeScale();
+        const sceneW: number = (width / sceneScale) | 0;
+        const sceneH: number = (height / sceneScale) | 0;
+        if (sceneScale !== 1) {
+            ScreenMode.bindSceneBuffer(sceneW, sceneH);
+        } else {
+            Pix2D.setClipping(x, y, x + width, y + height);
+        }
         Pix3D.setRenderClipping();
+        Pix3D.focal = Math.max(1, (ScreenMode.sceneFocal / sceneScale) | 0);
+        Client.scenePickMinX = Pix3D.minX;
+        Client.scenePickMaxX = Pix3D.maxX;
+        Client.scenePickMinY = Pix3D.minY;
+        Client.scenePickMaxY = Pix3D.maxY;
 
         if (ClientMouseListener.mouseX >= x && ClientMouseListener.mouseX < x + width && ClientMouseListener.mouseY >= y && ClientMouseListener.mouseY < y + height) {
             ModelLit.mouseCheck = true;
@@ -3600,10 +3630,23 @@ export class Client extends GameShell {
         World.updateHoverPicking(ModelLit.mouseCheck, Client.minusedlevel, ModelLit.mouseX, ModelLit.mouseY);
 
         Client.doAudio();
-        Pix2D.fillRect(x, y, width, height, 0x0);
+        Pix2D.fillRect(Pix2D.clipMinX, Pix2D.clipMinY, Pix2D.clipMaxX - Pix2D.clipMinX, Pix2D.clipMaxY - Pix2D.clipMinY, 0x0);
         World.renderAll(Client.camX, Client.camY, Client.camZ, Client.camPitch, Client.camYaw, level, null, null, null, null, null, null, Client.localPlayer!.x >> 7, Client.localPlayer!.z >> 7);
         Client.doAudio();
         World.removeSprites();
+        Pix3D.focal = 512;
+        if (sceneScale !== 1) {
+            // back to the frame buffer, upscale the scene, re-clip to the viewport
+            GameShell.drawArea.bind();
+            ScreenMode.blitSceneBuffer(GameShell.drawArea.data, GameShell.drawArea.width, x, y, sceneScale);
+            Pix2D.setClipping(x, y, x + width, y + height);
+            if (sceneW * sceneScale < width) {
+                Pix2D.fillRect(x + sceneW * sceneScale, y, width - sceneW * sceneScale, height, 0x0);
+            }
+            if (sceneH * sceneScale < height) {
+                Pix2D.fillRect(x, y + sceneH * sceneScale, width, height - sceneH * sceneScale, 0x0);
+            }
+        }
         Client.entityOverlays(x, y, height, width);
         Client.coordArrow(x, y, height, width);
         FineStream.viewportX = x;
@@ -4206,8 +4249,9 @@ export class Client extends GameShell {
             Client.projectX = -1;
             Client.projectY = -1;
         } else {
-            Client.projectY = (((var16 << 9) / var17) | 0) + arg0;
-            Client.projectX = arg3 + (((var13 << 9) / var17) | 0);
+            // overlays draw at FULL res after the scene pass — always the full sceneFocal
+            Client.projectY = (((var16 * ScreenMode.sceneFocal) / var17) | 0) + arg0;
+            Client.projectX = arg3 + (((var13 * ScreenMode.sceneFocal) / var17) | 0);
         }
     }
 
@@ -8848,6 +8892,14 @@ export class Client extends GameShell {
             Client.mobaTyping = true;
             return true;
         }
+        if (code === 83) {
+            // SPACE = camera lock toggle (League): unlocked edge-pans, locked snaps
+            // back to the champion. Consumed (with its ' ' char) outside typing.
+            MobaCamera.toggleLock();
+            Client.mobaSwallowCharA = 32; // ' '
+            Client.mobaSwallowCharB = 32;
+            return true;
+        }
         if (code === 32) {
             SkillshotOverlay.slotPressed(SkillshotOverlay.SLOT_Q);
             Client.mobaSwallowCharA = 113; // 'q'
@@ -9968,10 +10020,10 @@ export class Client extends GameShell {
         // MOBA: the ground tile behind the ability bar / HUD grid must not offer
         // "Walk here" — their own menu rows are the action (Java's GroundDecoration guard).
         if (Client.useMode === 0 && !Client.targetMode && !AbilityBarOverlay.mouseOverBar(arg5, arg0) && !HudPanelOverlay.mouseOverGrid(arg5, arg0)) {
-            const var6: number = Pix3D.minX;
-            const var7: number = Pix3D.maxX;
-            const var8: number = Pix3D.minY;
-            const var9: number = Pix3D.maxY;
+            const var6: number = Client.scenePickMinX;
+            const var7: number = Client.scenePickMaxX;
+            const var8: number = Client.scenePickMinY;
+            const var9: number = Client.scenePickMaxY;
             if (arg2 === 0) {
                 throw new Error();
             }

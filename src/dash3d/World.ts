@@ -731,15 +731,15 @@ export default class World {
         if (var6 < 1) {
             var6 = 1;
         }
-        const var8: number = ((var4 << 9) / var6) | 0;
-        const var9: number = ((var7 << 9) / var6) | 0;
+        const var8: number = ((var4 * Pix3D.focal) / var6) | 0;
+        const var9: number = ((var7 * Pix3D.focal) / var6) | 0;
         let var10: number = (arg2 * World.cameraSinX + var5 * World.cameraCosX) >> 16;
         const var11: number = (arg2 * World.cameraCosX - var5 * World.cameraSinX) >> 16;
         if (var10 < 1) {
             var10 = 1;
         }
-        const var12: number = ((var4 << 9) / var10) | 0;
-        const var13: number = ((var11 << 9) / var10) | 0;
+        const var12: number = ((var4 * Pix3D.focal) / var10) | 0;
+        const var13: number = ((var11 * Pix3D.focal) / var10) | 0;
         if (var6 < 50 && var10 < 50) {
             return false;
         } else if (var6 > 3500 && var10 > 3500) {
@@ -1720,14 +1720,14 @@ export default class World {
         if (var43 < 50) {
             return;
         }
-        const var44: number = Pix3D.originX + (((var21 << 9) / var25) | 0);
-        const var45: number = Pix3D.originY + (((var24 << 9) / var25) | 0);
-        const var46: number = Pix3D.originX + (((var27 << 9) / var31) | 0);
-        const var47: number = Pix3D.originY + (((var30 << 9) / var31) | 0);
-        const var48: number = Pix3D.originX + (((var33 << 9) / var37) | 0);
-        const var49: number = Pix3D.originY + (((var36 << 9) / var37) | 0);
-        const var50: number = Pix3D.originX + (((var39 << 9) / var43) | 0);
-        const var51: number = Pix3D.originY + (((var42 << 9) / var43) | 0);
+        const var44: number = Pix3D.originX + (((var21 * Pix3D.focal) / var25) | 0);
+        const var45: number = Pix3D.originY + (((var24 * Pix3D.focal) / var25) | 0);
+        const var46: number = Pix3D.originX + (((var27 * Pix3D.focal) / var31) | 0);
+        const var47: number = Pix3D.originY + (((var30 * Pix3D.focal) / var31) | 0);
+        const var48: number = Pix3D.originX + (((var33 * Pix3D.focal) / var37) | 0);
+        const var49: number = Pix3D.originY + (((var36 * Pix3D.focal) / var37) | 0);
+        const var50: number = Pix3D.originX + (((var39 * Pix3D.focal) / var43) | 0);
+        const var51: number = Pix3D.originY + (((var42 * Pix3D.focal) / var43) | 0);
         Pix3D.trans = 0;
         // MOBA fog Stage B: darken this tile's corner colours as it draws (ground draws before
         // walls/locs/entities, so objects standing in fog are unaffected — correct occlusion)
@@ -1817,8 +1817,8 @@ export default class World {
                 Ground.drawTextureVertexY[var9] = var16;
                 Ground.drawTextureVertexZ[var9] = var17;
             }
-            Ground.drawVertexX[var9] = Pix3D.originX + (((var13 << 9) / var17) | 0);
-            Ground.drawVertexY[var9] = Pix3D.originY + (((var16 << 9) / var17) | 0);
+            Ground.drawVertexX[var9] = Pix3D.originX + (((var13 * Pix3D.focal) / var17) | 0);
+            Ground.drawVertexY[var9] = Pix3D.originY + (((var16 * Pix3D.focal) / var17) | 0);
         }
         Pix3D.trans = 0;
         const var18: number = arg0.faceVertexA.length;

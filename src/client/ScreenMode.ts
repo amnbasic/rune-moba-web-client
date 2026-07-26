@@ -1,6 +1,7 @@
 import { Client } from '#/client/Client.js';
 import GameShell from '#/client/GameShell.js';
 import IfType from '#/config/IfType.js';
+import Pix2D from '#/graphics/Pix2D.js';
 import PixMap from '#/graphics/PixMap.js';
 import VarCache from '#/var/VarCache.js';
 
@@ -88,6 +89,81 @@ export default class ScreenMode {
     /** Fixed-mode XP button x = minimap left edge - 24; keep that relation in every mode. */
     static xpButtonX(): number {
         return ScreenMode.minimapX - 24;
+    }
+
+    /**
+     * World-scene focal for CONSTANT VERTICAL FOV (OSRS-style): 512 * vh / 334, so a
+     * wide window widens the view by its aspect ratio instead of the focal-512
+     * fisheye. Full-res value — overlays project with this; the raster pass divides
+     * by renderScale. Stamped by applyLayout.
+     */
+    static sceneFocal: number = 512;
+
+    /**
+     * 3D raster scale in non-FIXED modes: 2 = the scene renders at half resolution
+     * into a scratch buffer and 2x-upscales (a software raster's cost is pixel
+     * count — this is THE fullscreen perf lever). HUD/overlays stay full-res.
+     * Toggled in the ScreenSizeDialog; FIXED mode always rasters 1:1.
+     */
+    static renderScale: number = 2;
+
+    /** Half-res scene scratch buffer (lazily sized). */
+    private static sceneBuffer: Int32Array | null = null;
+    private static sceneBufferW: number = 0;
+    private static sceneBufferH: number = 0;
+
+    /** The scale the scene pass should raster at THIS frame. */
+    static activeScale(): number {
+        return ScreenMode.mode === ScreenMode.FIXED ? 1 : ScreenMode.renderScale;
+    }
+
+    /** Point Pix2D at the half-res scene scratch (clip = whole scratch). */
+    static bindSceneBuffer(w: number, h: number): Int32Array {
+        if (ScreenMode.sceneBuffer === null || ScreenMode.sceneBufferW !== w || ScreenMode.sceneBufferH !== h) {
+            ScreenMode.sceneBuffer = new Int32Array(w * h + 1);
+            ScreenMode.sceneBufferW = w;
+            ScreenMode.sceneBufferH = h;
+        }
+        Pix2D.setPixels(ScreenMode.sceneBuffer, w, h);
+        return ScreenMode.sceneBuffer;
+    }
+
+    /**
+     * Nearest-neighbour upscale of the scene scratch into the frame rect
+     * (x, y, w*scale, h*scale). Row-doubling keeps it a straight memory copy.
+     */
+    static blitSceneBuffer(frame: Int32Array, frameWidth: number, x: number, y: number, scale: number): void {
+        const src = ScreenMode.sceneBuffer;
+        if (src === null) {
+            return;
+        }
+        const sw = ScreenMode.sceneBufferW;
+        const sh = ScreenMode.sceneBufferH;
+        for (let row = 0; row < sh; row++) {
+            let si = row * sw;
+            let di = (y + row * scale) * frameWidth + x;
+            if (scale === 2) {
+                for (let col = 0; col < sw; col++) {
+                    const p = src[si++];
+                    frame[di] = p;
+                    frame[di + 1] = p;
+                    di += 2;
+                }
+                // duplicate the doubled row
+                frame.copyWithin(di - sw * 2 + frameWidth, di - sw * 2, di);
+            } else {
+                for (let col = 0; col < sw; col++) {
+                    const p = src[si++];
+                    for (let k = 0; k < scale; k++) {
+                        frame[di + k] = p;
+                    }
+                    di += scale;
+                }
+                for (let k = 1; k < scale; k++) {
+                    frame.copyWithin(di - sw * scale + frameWidth * k, di - sw * scale, di);
+                }
+            }
+        }
     }
 
     private static fullscreenListenerBound: boolean = false;
@@ -203,6 +279,7 @@ export default class ScreenMode {
         // Interfaces only exist in-game (pane 548 / welcome 549); the title screens
         // draw without an interface tree — touching IfType there crashed gameDraw.
         if (Client.toplevelinterface !== 548 && Client.toplevelinterface !== 549) {
+            ScreenMode.sceneFocal = 512;
             return;
         }
         // MOBA: crop the INVENTORY (cache interface 149 child 0) to LoL's SIX item
@@ -327,6 +404,8 @@ export default class ScreenMode {
         }
         ScreenMode.viewportWidth = vw;
         ScreenMode.viewportHeight = vh;
+        // Constant vertical FOV: scale the scene focal with viewport height (OSRS-style).
+        ScreenMode.sceneFocal = ScreenMode.mode === ScreenMode.FIXED ? 512 : Math.max(512, ((512 * vh) / ScreenMode.FIXED_VP_H) | 0);
         if (ScreenMode.mode !== ScreenMode.FIXED) {
             // The full-window scene repaints every frame and would erase the HUD,
             // whose components only redraw when flagged dirty — force component

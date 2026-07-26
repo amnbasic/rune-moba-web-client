@@ -20,11 +20,11 @@ export default class ScreenSizeDialog {
     static open: boolean = false;
 
     private static readonly TITLE: string = 'Screen Size';
-    private static readonly LABELS: string[] = ['Fixed  765 x 503', '1024 x 768', '1280 x 720', '1600 x 900', 'Fullscreen (native)', 'Cancel'];
-    /** Per-row target mode; -1 = cancel (just close). */
-    private static readonly MODES: number[] = [ScreenMode.FIXED, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.FULLSCREEN, -1];
-    private static readonly WS: number[] = [0, 1024, 1280, 1600, 0, 0];
-    private static readonly HS: number[] = [0, 768, 720, 900, 0, 0];
+    private static readonly LABELS: string[] = ['Fixed  765 x 503', '1024 x 768', '1280 x 720', '1600 x 900', 'Fullscreen (native)', '3D detail: toggle', 'Cancel'];
+    /** Per-row target mode; -1 = cancel (just close); -2 = 3D half/full-res toggle. */
+    private static readonly MODES: number[] = [ScreenMode.FIXED, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.RESIZABLE, ScreenMode.FULLSCREEN, -2, -1];
+    private static readonly WS: number[] = [0, 1024, 1280, 1600, 0, 0, 0];
+    private static readonly HS: number[] = [0, 768, 720, 900, 0, 0, 0];
 
     private static readonly COL_FILL: number = 0x2e2519;
     private static readonly COL_BORDER: number = 0x000000;
@@ -68,8 +68,13 @@ export default class ScreenSizeDialog {
         if (row < 0) {
             return; // title/padding: ignore, stay open
         }
-        ScreenSizeDialog.open = false;
         const mode = ScreenSizeDialog.MODES[row];
+        if (mode === -2) {
+            // 3D detail toggle: half-res raster (fast) <-> full-res (sharp); non-FIXED only.
+            ScreenMode.renderScale = ScreenMode.renderScale === 2 ? 1 : 2;
+            return; // stay open so the row label (below) reflects the new state
+        }
+        ScreenSizeDialog.open = false;
         if (mode >= 0) {
             ScreenMode.applyPreset(mode, ScreenSizeDialog.WS[row], ScreenSizeDialog.HS[row]);
         }
@@ -107,9 +112,13 @@ export default class ScreenSizeDialog {
             if (i === hover) {
                 Pix2D.fillRectTrans(panelX + 2, ry, ScreenSizeDialog.PANEL_W - 4, ScreenSizeDialog.ROW_H, 0xffffff, 40);
             }
-            const lw = font.stringWid(ScreenSizeDialog.LABELS[i]);
+            let label = ScreenSizeDialog.LABELS[i];
+            if (ScreenSizeDialog.MODES[i] === -2) {
+                label = ScreenMode.renderScale === 2 ? '3D detail: fast (half res)' : '3D detail: sharp (full res)';
+            }
+            const lw = font.stringWid(label);
             const baseline = ry + font.maxAscent + (((ScreenSizeDialog.ROW_H - font.maxAscent - font.maxDescent) / 2) | 0);
-            font.rightString(ScreenSizeDialog.LABELS[i], cx + ((lw / 2) | 0), baseline, i === hover ? ScreenSizeDialog.COL_HOVER : ScreenSizeDialog.COL_TEXT, ScreenSizeDialog.COL_BORDER);
+            font.rightString(label, cx + ((lw / 2) | 0), baseline, i === hover ? ScreenSizeDialog.COL_HOVER : ScreenSizeDialog.COL_TEXT, ScreenSizeDialog.COL_BORDER);
         }
     }
 }

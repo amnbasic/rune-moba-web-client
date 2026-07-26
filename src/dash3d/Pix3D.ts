@@ -62,6 +62,14 @@ export default class Pix3D {
     }
 
     // jag::oldscape::dash3d::Pix3D::SetRenderClipping
+    /**
+     * Scene-pass projection focal (512 = the engine's baked baseline). Set around
+     * World.renderAll to ScreenMode.sceneFocal / renderScale for constant-vertical-
+     * FOV resizable windows and the half-res render; every UI pass (item icons,
+     * interface models) runs with it at 512.
+     */
+    static focal: number = 512;
+
     static setRenderClipping(): void {
         Pix3D.setClipping(Pix2D.clipMinX, Pix2D.clipMinY, Pix2D.clipMaxX, Pix2D.clipMaxY);
     }
@@ -1304,14 +1312,26 @@ export default class Pix3D {
         const var37 = arg14 - arg12;
         const var38 = arg17 - arg15;
         const var39 = (var36 * arg12 - var37 * arg9) << 14;
-        const var40 = (var37 * arg15 - var38 * arg12) << 8;
-        const var41 = (var38 * arg9 - var36 * arg15) << 5;
+        let var40 = (var37 * arg15 - var38 * arg12) << 8;
+        let var41 = (var38 * arg9 - var36 * arg15) << 5;
         const var42 = (var33 * arg12 - var34 * arg9) << 14;
-        const var43 = (var34 * arg15 - var35 * arg12) << 8;
-        const var44 = (var35 * arg9 - var33 * arg15) << 5;
+        let var43 = (var34 * arg15 - var35 * arg12) << 8;
+        let var44 = (var35 * arg9 - var33 * arg15) << 5;
         const var45 = (var34 * var36 - var33 * var37) << 14;
-        const var46 = (var35 * var37 - var34 * var38) << 8;
-        const var47 = (var33 * var38 - var35 * var36) << 5;
+        let var46 = (var35 * var37 - var34 * var38) << 8;
+        let var47 = (var33 * var38 - var35 * var36) << 5;
+        if (Pix3D.focal !== 512) {
+            // sceneFocal: the base terms (<<14) bake focal 512; rescale the SIX step
+            // terms by 512/focal so the u=f1/f3 ratios match vertices projected with
+            // the scene focal (the 464 client's verified round-2 recipe). float64 is
+            // exact here (|terms| < 2^37 << 2^53).
+            var40 = ((var40 * 512) / Pix3D.focal) | 0;
+            var41 = ((var41 * 512) / Pix3D.focal) | 0;
+            var43 = ((var43 * 512) / Pix3D.focal) | 0;
+            var44 = ((var44 * 512) / Pix3D.focal) | 0;
+            var46 = ((var46 * 512) / Pix3D.focal) | 0;
+            var47 = ((var47 * 512) / Pix3D.focal) | 0;
+        }
         if (arg0 <= arg1 && arg0 <= arg2) {
             if (arg0 < Pix3D.sizeY) {
                 if (arg1 > Pix3D.sizeY) {
@@ -2259,14 +2279,23 @@ export default class Pix3D {
         const var37 = arg14 - arg12;
         const var38 = arg17 - arg15;
         const var39 = (var36 * arg12 - var37 * arg9) << 14;
-        const var40 = (var37 * arg15 - var38 * arg12) << 5;
-        const var41 = (var38 * arg9 - var36 * arg15) << 5;
+        let var40 = (var37 * arg15 - var38 * arg12) << 5;
+        let var41 = (var38 * arg9 - var36 * arg15) << 5;
         const var42 = (var33 * arg12 - var34 * arg9) << 14;
-        const var43 = (var34 * arg15 - var35 * arg12) << 5;
-        const var44 = (var35 * arg9 - var33 * arg15) << 5;
+        let var43 = (var34 * arg15 - var35 * arg12) << 5;
+        let var44 = (var35 * arg9 - var33 * arg15) << 5;
         const var45 = (var34 * var36 - var33 * var37) << 14;
-        const var46 = (var35 * var37 - var34 * var38) << 5;
-        const var47 = (var33 * var38 - var35 * var36) << 5;
+        let var46 = (var35 * var37 - var34 * var38) << 5;
+        let var47 = (var33 * var38 - var35 * var36) << 5;
+        if (Pix3D.focal !== 512) {
+            // sceneFocal: same six-step-term rescale as textureTriangle (ground mapper).
+            var40 = ((var40 * 512) / Pix3D.focal) | 0;
+            var41 = ((var41 * 512) / Pix3D.focal) | 0;
+            var43 = ((var43 * 512) / Pix3D.focal) | 0;
+            var44 = ((var44 * 512) / Pix3D.focal) | 0;
+            var46 = ((var46 * 512) / Pix3D.focal) | 0;
+            var47 = ((var47 * 512) / Pix3D.focal) | 0;
+        }
         if (arg0 <= arg1 && arg0 <= arg2) {
             if (arg0 < Pix3D.sizeY) {
                 if (arg1 > Pix3D.sizeY) {
